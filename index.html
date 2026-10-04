@@ -1421,7 +1421,7 @@ function viewCalendar(){
   const selList=(by[sel]||[]).sort(cmp);
   return`<div class="page-h"><div><h1>Calendar</h1><p>Tap a day to see what's due.</p></div>
     <div class="row"><button class="iconbtn" data-act="calprev" aria-label="Previous month">${ico('left',18)}</button><b style="min-width:150px;text-align:center;font-family:var(--font-d);font-size:19px">${MONL[m]} ${y}</b><button class="iconbtn" data-act="calnext" aria-label="Next month">${ico('right',18)}</button><button class="btn sm" data-act="caltoday">Today</button></div></div>
-  <div class="grid cols-2" style="grid-template-columns:minmax(0,1.6fr) minmax(0,1fr)">
+  <div class="grid cols-2">
     <div class="card"><div class="cal">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(x=>`<div class="dow">${x}</div>`).join('')}${cells.map(cell).join('')}</div>
       <div class="legend" style="margin-top:14px"><span>Pending</span><span class="ok">Completed</span><span class="bad">Overdue</span></div></div>
     <div class="card"><h2>${fmtDate(sel,true)}${sel===t?' <span class="pill acc">Today</span>':''}</h2>
