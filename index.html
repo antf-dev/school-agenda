@@ -2025,7 +2025,7 @@ async function initClass(){
     if(p){
       S.student.id=p.id;S.student.name=String(p.name||S.student.name).slice(0,40);
       S.student.className=normalizeClassName(p.class_name||S.student.className).slice(0,40);
-      S.student.isAdmin=!!p.is_admin;S.student.profileComplete=true;P.student();
+      S.student.isAdmin=!!p.is_admin;S.student.hasPassword=!!p.has_password;S.student.profileComplete=true;P.student();
       Class.me=p.id;Class.className=S.student.className;Class.classKey=classKey(Class.className);Class.isAdmin=S.student.isAdmin;
       /* Re-read after the profile sync so admin status and class identity are current. */
       await fetchClassPosts();
@@ -2253,7 +2253,7 @@ async function logoutAgenda(){
   try{stopCloudWatchers();if(supabaseClient)await supabaseClient.auth.signOut({scope:'local'});}catch(e){console.error('Supabase sign-out failed:',e);}
   SUPABASE_AUTH_LAST_ERROR='';
   SUPABASE_CACHED_USER=null;SUPABASE_AUTH_PROMISE=null;
-  S.student.profileComplete=false;S.student.id='student';S.student.name='';S.student.className='';S.student.isAdmin=false;
+  S.student.profileComplete=false;S.student.id='student';S.student.name='';S.student.className='';S.student.isAdmin=false;S.student.hasPassword=false;
   try{await P.student();}catch(e){}
   $('#app').hidden=true;
   $('#boot').hidden=false;
@@ -2353,48 +2353,30 @@ document.addEventListener('input',e=>{
 /* ----- First-run profile setup ----- */
 function showSetup(){
   const bootEl=$('#boot');
-  bootEl.innerHTML=`<div class=\"boot-card\" style=\"width:min(460px,calc(100vw - 32px));text-align:left;background:var(--card);border:1px solid var(--line);border-radius:22px;padding:24px;box-shadow:var(--shadow);justify-items:stretch\">
-    <div style=\"display:flex;align-items:center;gap:10px;margin-bottom:18px\"><div class=\"brand\" style=\"padding:0\"><i>✦</i>Agenda</div></div>
-    <h2 style=\"color:var(--text);font-size:28px;margin-bottom:5px\">Set up your profile</h2>
-    <p style=\"color:var(--muted);margin-bottom:18px\">Enter your name and class to get started. You can use any name.</p>
-    <form id=\"setupform\" style=\"display:grid;gap:12px\">
-      <label class=\"field\"><span>Name</span><input class=\"inp\" id=\"setupname\" maxlength=40 placeholder=\"Your name\" required></label>
-      <label class=\"field\"><span>Class</span><select class=\"sel\" id=\"setupclass\" required><option value=\"\" disabled selected>Select your class</option>${ALLOWED_CLASSES.map(c=>`<option value=\"${c}\">${c}</option>`).join('')}</select></label>
-      <p id=\"setuperr\" style=\"color:var(--bad);font-size:13px;margin-top:2px\" role=\"alert\"></p>
-      <button class=\"btn primary\" type=\"submit\">Continue</button>
-    </form>
-  </div>`;
-  const f=$('#setupform'),err=$('#setuperr');
-  f.onsubmit=async e=>{
-    e.preventDefault();const name=$('#setupname').value.trim(),cls=normalizeClassName($('#setupclass').value);
-    if(!name||!cls){err.textContent='Enter your name and class.';return}
-    /* Admin privileges are verified only by Supabase RPC. Never trust or embed the admin code in client-side authorization logic. */
-    const submit=f.querySelector('button[type="submit"]');submit.disabled=true;submit.textContent='Setting up…';err.textContent='';
+  bootEl.innerHTML='<div class="boot-card" style="width:min(460px,calc(100vw - 32px));text-align:left;background:var(--card);border:1px solid var(--line);border-radius:22px;padding:24px;box-shadow:var(--shadow);justify-items:stretch">'+
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:18px"><div class="brand" style="padding:0"><i>✦</i>Agenda</div></div>'+
+    '<h2 style="color:var(--text);font-size:28px;margin-bottom:5px">School Agenda</h2><p style="color:var(--muted);margin-bottom:18px">Create your student account or log back in.</p>'+
+    '<div class="seg" style="margin-bottom:16px"><button type="button" id="authnew" class="on">Create account</button><button type="button" id="authlogin">Log in</button></div>'+
+    '<form id="setupform" style="display:grid;gap:12px">'+
+      '<label class="field"><span>Name</span><input class="inp" id="setupname" maxlength="40" placeholder="Your name" required></label>'+
+      '<label class="field"><span>Class</span><select class="sel" id="setupclass" required><option value="" disabled selected>Select your class</option>'+ALLOWED_CLASSES.map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('')+'</select></label>'+
+      '<label class="field"><span>Password</span><input class="inp" id="setuppassword" type="password" minlength="8" autocomplete="new-password" placeholder="At least 8 characters" required></label>'+
+      '<label class="field" id="setupconfirmfield"><span>Confirm password</span><input class="inp" id="setupconfirm" type="password" minlength="8" autocomplete="new-password" required></label>'+
+      '<p id="setuperr" style="color:var(--bad);font-size:13px;margin-top:2px" role="alert"></p><button class="btn primary" type="submit" id="setupsubmit">Create account</button></form></div>';
+  const f=$('#setupform'),err=$('#setuperr'),newBtn=$('#authnew'),loginBtn=$('#authlogin'),confirmField=$('#setupconfirmfield'),confirmInput=$('#setupconfirm');let mode='create';
+  function setMode(next){mode=next;newBtn.classList.toggle('on',mode==='create');loginBtn.classList.toggle('on',mode==='login');confirmField.hidden=mode==='login';confirmInput.required=mode==='create';$('#setupsubmit').textContent=mode==='create'?'Create account':'Log in';err.textContent=''}
+  newBtn.onclick=()=>setMode('create');loginBtn.onclick=()=>setMode('login');
+  f.onsubmit=async e=>{e.preventDefault();const name=$('#setupname').value.trim(),cls=normalizeClassName($('#setupclass').value),pw=$('#setuppassword').value;if(!name||!cls){err.textContent='Enter your name and class.';return}if(pw.length<8){err.textContent='Password must be at least 8 characters.';return}if(mode==='create'&&pw!==confirmInput.value){err.textContent='Passwords do not match.';return}
+    const submit=$('#setupsubmit');submit.disabled=true;submit.textContent=mode==='create'?'Creating…':'Logging in…';err.textContent='';
     try{
-      if(SUPABASE_CONFIGURED){
-        const user=await ensureSupabaseUser();
-        if(!user)throw new Error(SUPABASE_AUTH_LAST_ERROR||'The shared database could not create your student session.');
-        const p=await cloudRegisterStudent(name,cls);
-        if(!p)throw new Error('Your profile could not be saved to the shared database.');
-        const final=await cloudOwnProfile();
-        if(!final)throw new Error('Your shared profile could not be loaded.');
-        S.student.id=final.id;S.student.name=String(final.name||name).slice(0,40);
-        S.student.className=normalizeClassName(final.class_name||cls).slice(0,40);S.student.isAdmin=!!final.is_admin;
-      }else{
-        if(!S.student.id||S.student.id==='student')S.student.id=uid('student');
-        S.student.isAdmin=false;
-        toast('Saved locally. Shared class features need Supabase configuration.',{kind:'bad',ms:6000});
-      }
-      S.student.name=name.slice(0,40);S.student.className=normalizeClassName(cls).slice(0,40);S.student.profileComplete=true;
-      if(SUPABASE_CONFIGURED){const p=await cloudOwnProfile();if(p){S.student.id=p.id;S.student.name=String(p.name||name).slice(0,40);S.student.className=normalizeClassName(p.class_name||cls).slice(0,40);S.student.isAdmin=!!p.is_admin}}
-      P.student();
-      const hp=location.hash.replace(/^#\/?/,'')||'dashboard';ui.routeStr=hp;ui.route=parseRoute(hp);
-      shell();checkAchievements();refreshReminders();await initClass();
-      $('#boot').remove();$('#app').hidden=false;renderAll();
-    }catch(e2){console.error('Profile setup failed:',e2);err.textContent=sharedError(e2,'Could not complete profile setup. Try again.')}
-    finally{submit.disabled=false;submit.textContent='Continue'}
-  };
-  setTimeout(()=>$('#setupname')?.focus(),30);
+      let p;
+      if(mode==='login'){p=await cloudLogin(name,cls,pw);if(!p)throw new Error('Your student profile could not be loaded.');}
+      else{const user=await ensureSupabaseUser();if(!user)throw new Error(SUPABASE_AUTH_LAST_ERROR||'Could not create your student session.');p=await cloudRegisterStudent(name,cls,user);if(!p)throw new Error('Your profile could not be saved.');await cloudSetPassword(pw);}
+      S.student.id=p.id;S.student.name=String(p.name||name).slice(0,40);S.student.className=normalizeClassName(p.class_name||cls).slice(0,40);S.student.isAdmin=!!p.is_admin;S.student.hasPassword=mode==='create'?true:!!p.has_password;S.student.profileComplete=true;
+      if(Number(p.total_xp||0)>S.student.totalXP){S.student.totalXP=Number(p.total_xp);S.student.level=Number(p.level||levelInfo(S.student.totalXP).level)}
+      await P.student();await cloudSyncProgress();const hp=location.hash.replace(/^#\/?/,'')||'dashboard';ui.routeStr=hp;ui.route=parseRoute(hp);shell();checkAchievements();refreshReminders();await initClass();$('#boot').remove();$('#app').hidden=false;renderAll();
+    }catch(e2){console.error('Account action failed:',e2);err.textContent=sharedError(e2,mode==='create'?'Could not create your account.':'Could not log you in.')}finally{submit.disabled=false;submit.textContent=mode==='create'?'Create account':'Log in'}
+  };setTimeout(()=>$('#setupname')?.focus(),30);
 }
 
 /* =====================================================================
