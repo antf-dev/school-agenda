@@ -1,0 +1,2407 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Agenda – personal planner, tasks, XP and streaks · v10</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* Apply the saved theme before first paint (small preference only; real data lives in IndexedDB). */
+(function(){try{var t=localStorage.getItem('agenda-theme')||'dark';
+var r=t==='system'?(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark'):t;
+document.documentElement.setAttribute('data-theme',r==='light'?'light':'dark');}catch(e){}})();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#0f1220;--bg2:#141829;--card:#1a1f35;--card2:#222844;--line:rgba(255,255,255,.08);--line2:rgba(255,255,255,.15);
+  --text:#eef0fb;--muted:#9ba2c7;--faint:#6c7399;
+  --accent:#8b9bff;--accent-ink:#0f1220;--accent-soft:rgba(139,155,255,.15);
+  --xp:#f6c05a;--xp-soft:rgba(246,192,90,.15);
+  --ok:#52d6a6;--ok-soft:rgba(82,214,166,.15);--bad:#ff6f83;--bad-soft:rgba(255,111,131,.15);
+  --shadow:0 18px 50px rgba(0,0,0,.45);
+  --font-d:'Bricolage Grotesque','Segoe UI',system-ui,sans-serif;
+  --font:'Instrument Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  color-scheme:dark;
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+}
+:root[data-theme="light"]{
+  --bg:#f2f3fa;--bg2:#e9ebf7;--card:#ffffff;--card2:#eef0fa;--line:rgba(20,25,60,.09);--line2:rgba(20,25,60,.17);
+  --text:#161a33;--muted:#576088;--faint:#8a90b3;
+  --accent:#4a5bf0;--accent-ink:#ffffff;--accent-soft:rgba(74,91,240,.11);
+  --xp:#a96d00;--xp-soft:rgba(226,160,30,.18);
+  --ok:#0f8f66;--ok-soft:rgba(15,143,102,.12);--bad:#d33851;--bad-soft:rgba(211,56,81,.1);
+  --shadow:0 18px 50px rgba(30,40,100,.18);color-scheme:light;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px);-webkit-text-size-adjust:100%}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 var(--font);-webkit-font-smoothing:antialiased;min-height:100vh}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(900px 500px at 8% -10%,var(--accent-soft),transparent 60%),radial-gradient(700px 400px at 100% 0%,var(--xp-soft),transparent 55%);opacity:.8;z-index:0}
+h1,h2,h3,h4,p{margin:0}
+h1,h2,h3{font-family:var(--font-d);font-weight:700;letter-spacing:-.01em}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+a{color:inherit;text-decoration:none}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:8px}
+[hidden]{display:none!important}
+.ico{flex:none}
+
+/* boot */
+.boot{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg);z-index:100}
+.boot-card{display:grid;gap:14px;justify-items:center;color:var(--muted)}
+.boot-mark{width:38px;height:38px;border-radius:50%;border:3px solid var(--line2);border-top-color:var(--accent);animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* shell */
+.app{position:relative;z-index:1;display:grid;grid-template-columns:244px minmax(0,1fr);min-height:100vh}
+.side{position:sticky;top:0;height:100vh;height:100dvh;display:flex;flex-direction:column;padding:20px 14px;border-right:1px solid var(--line);background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(10px)}
+.brand{display:flex;align-items:center;gap:10px;padding:2px 10px 18px;font-family:var(--font-d);font-weight:700;font-size:20px}
+.brand i{width:28px;height:28px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--xp));display:grid;place-items:center;color:var(--accent-ink);font-style:normal;font-size:15px}
+.nav{display:grid;gap:2px}
+.nav a{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:12px;color:var(--muted);font-weight:500;transition:background .15s,color .15s}
+.nav a:hover{background:var(--card);color:var(--text)}
+.nav a.on{background:var(--accent-soft);color:var(--text)}
+.nav a.on .ico{color:var(--accent)}
+.nav .badge{margin-left:auto;background:var(--bad);color:#fff;border-radius:99px;font-size:11px;padding:1px 7px;font-weight:600}
+.minilevel{margin-top:auto;padding:14px;border-radius:16px;background:var(--card);border:1px solid var(--line)}
+.minilevel b{font-family:var(--font-d);font-size:16px}
+.minilevel small{display:block;color:var(--muted);margin:2px 0 10px}
+.main{min-width:0;padding:0 28px 40px}
+.topbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;display:flex;align-items:center;gap:10px;padding:16px 0 14px;background:linear-gradient(var(--bg) 70%,transparent)}
+.search{flex:1;max-width:520px;display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:0 12px;color:var(--muted)}
+.search input{flex:1;min-width:0;background:none;border:0;outline:0;padding:11px 0;color:var(--text)}
+.search:focus-within{border-color:var(--accent)}
+.topbar .sp{flex:1}
+.saved{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px;white-space:nowrap}
+.saved i{width:7px;height:7px;border-radius:50%;background:var(--ok)}
+.saved.saving i{background:var(--xp);animation:pulse 1s infinite}
+.saved.error i,.saved.unsaved i{background:var(--bad)}
+@keyframes pulse{50%{opacity:.3}}
+.view{max-width:1120px;margin:0 auto}
+.page-h{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:6px 0 18px}
+.page-h h1{font-size:30px;line-height:1.1}
+.page-h p{color:var(--muted);margin-top:4px}
+
+/* controls */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line2);background:var(--card);padding:9px 14px;border-radius:12px;font-weight:600;transition:transform .12s,background .15s,border-color .15s}
+.btn:hover{border-color:var(--accent)}
+.btn:active{transform:scale(.97)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,transparent)}
+.btn.danger.solid{background:var(--bad);color:#fff;border-color:transparent}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--muted)}
+.btn.ghost:hover{color:var(--text);background:var(--card)}
+.btn.sm{padding:6px 10px;font-size:13px;border-radius:10px}
+.btn[disabled]{opacity:.5;pointer-events:none}
+.iconbtn{display:inline-grid;place-items:center;width:38px;height:38px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--muted);position:relative}
+.iconbtn:hover{color:var(--text);border-color:var(--line2)}
+.iconbtn.sm{width:30px;height:30px;border-radius:9px;border-color:transparent;background:transparent}
+.iconbtn .dot{position:absolute;top:-4px;right:-4px;background:var(--bad);color:#fff;border-radius:99px;font-size:10px;min-width:17px;padding:1px 4px;font-weight:700;text-align:center}
+.fab{display:none}
+
+/* cards */
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:18px}
+.card h2{font-size:18px;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.card h2 .count{font-family:var(--font);font-size:12.5px;font-weight:600;color:var(--muted);background:var(--card2);border-radius:99px;padding:1px 9px}
+.grid{display:grid;gap:16px}
+.cols-2{grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)}
+.cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.stack{display:grid;gap:12px}
+.muted{color:var(--muted)}
+.faint{color:var(--faint)}
+.row{display:flex;align-items:center;gap:10px}
+.row.wrap{flex-wrap:wrap}
+.between{justify-content:space-between}
+
+/* hero */
+.hero{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,.8fr) minmax(0,1fr);gap:0;padding:0;overflow:hidden}
+.hero>div{padding:22px}
+.hero>div+div{border-left:1px solid var(--line)}
+.hello{font-size:15px;color:var(--muted);margin-bottom:14px}
+.hello b{display:block;font-family:var(--font-d);font-size:26px;color:var(--text);line-height:1.15;margin-bottom:2px}
+.levelrow{display:flex;gap:18px;align-items:center}
+.ring{position:relative;flex:none}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring-bg{fill:none;stroke:var(--card2)}
+.ring-fill{fill:none;stroke:var(--xp);stroke-linecap:round;transition:stroke-dashoffset .9s cubic-bezier(.2,.8,.2,1)}
+.ring.today .ring-fill{stroke:var(--ok)}
+.ring-in{position:absolute;inset:0;display:grid;place-content:center;text-align:center}
+.ring-in b{font-family:var(--font-d);font-size:34px;line-height:1}
+.ring-in small{color:var(--muted);font-size:12px}
+.xpnum{font-family:var(--font-d);font-size:24px;font-weight:700}
+.xpnum small{font-family:var(--font);font-size:14px;color:var(--muted);font-weight:500}
+.bar{height:10px;border-radius:99px;background:var(--card2);overflow:hidden}
+.bar.sm{height:6px}
+.bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--xp));transition:width .9s cubic-bezier(.2,.8,.2,1)}
+.bar.ok i{background:var(--ok)}
+.bar.sub i{background:var(--ac,var(--accent))}
+.streakbig{display:flex;align-items:center;gap:10px;font-family:var(--font-d);font-size:26px;font-weight:700}
+.streakbig span{font-size:30px}
+.heat{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-top:14px}
+.heat i{aspect-ratio:1;border-radius:6px;background:var(--card2);display:block}
+.heat i.on{background:var(--xp)}
+.heat i.rest{background:color-mix(in srgb,var(--card2) 50%,transparent)}
+.heat i.today{outline:2px solid var(--accent);outline-offset:1px}
+.heat i.fut{opacity:.3}
+.heatlabels{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-top:12px;font-size:11px;color:var(--faint);text-align:center}
+
+/* homework cards */
+.hwlist{display:grid;gap:10px}
+.hw{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:start;padding:14px;border-radius:16px;background:var(--card);border:1px solid var(--line);position:relative;transition:border-color .15s,opacity .2s}
+.hw:hover{border-color:var(--line2)}
+.hw.overdue{border-color:color-mix(in srgb,var(--bad) 45%,transparent)}
+.hw.overdue::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:3px;border-radius:3px;background:var(--bad)}
+.hw.completed .hw-title{text-decoration:line-through;text-decoration-color:var(--faint);color:var(--muted)}
+.hw.completed{opacity:.78}
+.check{width:30px;height:30px;border-radius:50%;border:2px solid var(--line2);background:transparent;display:grid;place-items:center;color:transparent;margin-top:2px;transition:background .18s,border-color .18s,transform .18s}
+.check:hover{border-color:var(--ok)}
+.check svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:24;stroke-dashoffset:24;transition:stroke-dashoffset .3s .05s}
+.hw.completed .check{background:var(--ok);border-color:var(--ok);color:#06251b;animation:pop .35s}
+.hw.completed .check svg{stroke-dashoffset:0}
+@keyframes pop{40%{transform:scale(1.22)}}
+.hw-main{min-width:0;cursor:pointer}
+.hw-top{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-bottom:2px}
+.hw-title{font-size:16.5px;font-family:var(--font);font-weight:600;line-height:1.3}
+.hw-desc{color:var(--muted);font-size:14px;margin-top:2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.hw-meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.hw-side{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.hw-side .acts{display:flex;gap:2px}
+.tile{--ac:var(--accent);display:inline-grid;place-items:center;width:38px;height:38px;border-radius:12px;background:color-mix(in srgb,var(--ac) 20%,transparent);color:var(--ac);font-weight:700;font-size:17px;line-height:1;flex:none}
+.tile.sm{width:22px;height:22px;border-radius:7px;font-size:12px}
+.tile.lg{width:56px;height:56px;border-radius:16px;font-size:26px}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:2px 9px;border-radius:99px;background:var(--card2);color:var(--muted);white-space:nowrap}
+.pill.bad{background:var(--bad-soft);color:var(--bad)}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}
+.pill.xp{background:var(--xp-soft);color:var(--xp)}
+.pill.acc{background:var(--accent-soft);color:var(--accent)}
+.pill.hi{background:var(--bad-soft);color:var(--bad)}
+.pill.lo{background:var(--card2);color:var(--faint)}
+.xpchip{font-family:var(--font-d);font-weight:700;color:var(--xp);font-size:15px;white-space:nowrap}
+.xpchip.done{color:var(--faint);font-weight:600;font-size:13px}
+.empty{padding:34px 18px;text-align:center;color:var(--muted);border:1px dashed var(--line2);border-radius:18px}
+.empty h3{color:var(--text);font-size:18px;margin-bottom:6px}
+.empty .row{justify-content:center;margin-top:14px}
+
+/* filters */
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--card);padding:6px 13px;border-radius:99px;font-weight:600;font-size:13.5px;color:var(--muted)}
+.chip.on{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 16px}
+.sel,.inp,.txt{background:var(--bg2);border:1px solid var(--line2);border-radius:12px;padding:9px 11px;outline:0;width:100%;min-width:0}
+.sel:focus,.inp:focus,.txt:focus{border-color:var(--accent)}
+.filters .sel,.filters .inp{width:auto}
+.txt{resize:vertical;min-height:72px}
+.field{display:grid;gap:5px}
+.field>span{font-size:13px;font-weight:600;color:var(--muted)}
+.fgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.fgrid .full{grid-column:1/-1}
+.hint{font-size:12.5px;color:var(--faint)}
+
+/* subjects */
+.subgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+.subcard{display:grid;gap:12px;text-align:left;width:100%;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;transition:border-color .15s,transform .15s}
+.subcard:hover{border-color:var(--ac,var(--accent))}
+.subcard b{font-family:var(--font-d);font-size:17px}
+.subcard .nums{display:flex;justify-content:space-between;font-size:13px;color:var(--muted)}
+.subhead{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.subhead h1{font-size:32px}
+.stats3{display:flex;gap:24px;flex-wrap:wrap;margin-top:6px;color:var(--muted)}
+.stats3 b{color:var(--text);font-family:var(--font-d);font-size:20px;margin-right:5px}
+.swatches{display:flex;gap:8px;flex-wrap:wrap}
+.swatch{width:30px;height:30px;border-radius:50%;border:3px solid transparent;background:var(--c)}
+.swatch.on{border-color:var(--text)}
+
+/* calendar */
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.cal .dow{font-size:12px;color:var(--faint);text-align:center;padding:4px 0}
+.day{min-height:78px;border-radius:12px;background:var(--bg2);border:1px solid transparent;padding:6px 7px;text-align:left;display:flex;flex-direction:column;justify-content:space-between;gap:6px}
+.day:hover{border-color:var(--line2)}
+.day.out{opacity:.4}
+.day.today .n{background:var(--accent);color:var(--accent-ink)}
+.day.sel{border-color:var(--accent);background:var(--accent-soft)}
+.day .n{font-size:13px;font-weight:600;width:24px;height:24px;display:grid;place-items:center;border-radius:50%}
+.dots{display:flex;gap:4px;flex-wrap:wrap;align-items:center}
+.dots i{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-style:normal;font-weight:700;color:var(--muted)}
+.dots i::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.dots i.ok::before{background:var(--ok)}
+.dots i.bad::before{background:var(--bad)}
+.legend{display:flex;gap:16px;font-size:13px;color:var(--muted);flex-wrap:wrap}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend span::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--accent)}
+.legend .ok::before{background:var(--ok)}.legend .bad::before{background:var(--bad)}
+
+/* achievements & stats */
+.achgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+.ach{display:grid;gap:10px;padding:16px;border-radius:18px;background:var(--card);border:1px solid var(--line)}
+.ach .ic{width:50px;height:50px;border-radius:15px;display:grid;place-items:center;font-size:25px;background:var(--xp-soft)}
+.ach.locked .ic{filter:grayscale(1);opacity:.45;background:var(--card2)}
+.ach.unlocked{border-color:color-mix(in srgb,var(--xp) 40%,transparent)}
+.ach b{font-family:var(--font-d);font-size:16.5px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
+.kpi{padding:14px 16px;border-radius:16px;background:var(--card);border:1px solid var(--line)}
+.kpi b{display:block;font-family:var(--font-d);font-size:26px;line-height:1.15}
+.kpi span{font-size:13px;color:var(--muted)}
+.vbars{display:flex;align-items:flex-end;gap:6px;height:190px;padding-top:20px}
+.vb{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:6px}
+.vb .col{width:100%;max-width:34px;border-radius:8px 8px 3px 3px;background:linear-gradient(var(--accent),color-mix(in srgb,var(--accent) 45%,transparent));min-height:3px;transition:height .6s}
+.vb.xpm .col{background:linear-gradient(var(--xp),color-mix(in srgb,var(--xp) 45%,transparent))}
+.vb em{font-style:normal;font-size:11px;color:var(--muted);font-weight:600}
+.vb small{font-size:10.5px;color:var(--faint);white-space:nowrap}
+.hbars{display:grid;gap:12px}
+.hb{display:grid;grid-template-columns:130px minmax(0,1fr) 52px;gap:10px;align-items:center;font-size:14px}
+.hb span:last-child{text-align:right;color:var(--muted);font-weight:600}
+.seg{display:inline-flex;background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:3px}
+.seg button{border:0;background:transparent;padding:5px 12px;border-radius:9px;color:var(--muted);font-weight:600;font-size:13px}
+.seg button.on{background:var(--card2);color:var(--text)}
+
+.photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;padding:4px 0 6px}
+.photo-tile{display:grid;gap:7px;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:8px;color:var(--text)}
+.photo-tile:hover{border-color:var(--accent)}
+.photo-tile img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:10px;background:var(--bg2)}
+.photo-tile span{font-size:12px;color:var(--muted);padding:0 3px 2px}
+
+/* settings */
+.set-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:11px 0;border-top:1px solid var(--line)}
+.set-row:first-of-type{border-top:0}
+.set-row small{display:block;color:var(--muted)}
+.switch{position:relative;display:inline-block;width:44px;height:26px;flex:none}
+.switch input{position:absolute;opacity:0;inset:0;width:100%;height:100%;margin:0;cursor:pointer}
+.switch span{position:absolute;inset:0;border-radius:99px;background:var(--card2);border:1px solid var(--line2);transition:.2s;pointer-events:none}
+.switch span::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--muted);transition:.2s}
+.switch input:checked+span{background:var(--accent);border-color:transparent}
+.switch input:checked+span::after{left:21px;background:var(--accent-ink)}
+.switch input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
+table.xp{width:100%;border-collapse:collapse;font-size:14px}
+table.xp td{padding:7px 0;border-top:1px solid var(--line)}
+table.xp td:last-child{text-align:right;font-weight:700;color:var(--xp)}
+
+/* overlays */
+.overlay{position:fixed;inset:0;z-index:60;background:rgba(5,7,16,.6);backdrop-filter:blur(3px);display:grid;place-items:center;padding:16px;animation:fade .15s}
+@keyframes fade{from{opacity:0}}
+.modal{width:min(640px,100%);max-height:calc(100dvh - 32px);overflow:auto;background:var(--card);border:1px solid var(--line2);border-radius:22px;box-shadow:var(--shadow);animation:rise .2s cubic-bezier(.2,.8,.2,1)}
+.modal.wide{width:min(860px,100%)}
+.modal.narrow{width:min(440px,100%)}
+@keyframes rise{from{transform:translateY(14px);opacity:0}}
+.mh{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:18px 20px 6px;position:sticky;top:0;background:var(--card);z-index:2}
+.mh h2{font-size:21px}
+.mb{padding:10px 20px 20px}
+.mf{display:flex;justify-content:flex-end;gap:10px;padding:0 20px 20px;flex-wrap:wrap}
+.choice{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.choice button{display:grid;gap:8px;text-align:left;padding:18px;border-radius:18px;background:var(--bg2);border:1px solid var(--line2)}
+.choice button:hover{border-color:var(--accent)}
+.choice b{font-family:var(--font-d);font-size:17px}
+.choice span{color:var(--muted);font-size:14px}
+.drop{border:2px dashed var(--line2);border-radius:18px;padding:30px 16px;text-align:center;color:var(--muted);display:grid;gap:8px;justify-items:center}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.det{display:grid;gap:10px;padding:14px;border-radius:16px;background:var(--bg2);border:1px solid var(--line)}
+.det.added{opacity:.75}
+.src{display:grid;grid-template-columns:130px minmax(0,1fr);gap:14px;padding:14px 0;border-top:1px solid var(--line)}
+.src:first-child{border-top:0}
+.src img{width:130px;height:130px;object-fit:cover;border-radius:12px;background:var(--bg2);cursor:zoom-in}
+.thumbs{display:flex;gap:8px;flex-wrap:wrap}
+.att{display:inline-flex;align-items:center;gap:6px;background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:4px 8px;font-size:13px;max-width:100%}
+.att img{width:26px;height:26px;border-radius:6px;object-fit:cover}
+.att button{border:0;background:none;color:var(--muted);padding:0 2px}
+.fullimg{max-width:100%;max-height:70vh;display:block;margin:0 auto;border-radius:12px}
+.notifpanel{position:fixed;top:calc(env(safe-area-inset-top,0px) + 62px);right:20px;width:min(380px,calc(100vw - 24px));max-height:70vh;overflow:auto;background:var(--card);border:1px solid var(--line2);border-radius:18px;box-shadow:var(--shadow);z-index:55;padding:6px}
+.notif{display:grid;grid-template-columns:auto 1fr;gap:10px;padding:10px;border-radius:12px}
+.notif.unread{background:var(--accent-soft)}
+.notif b{display:block;font-size:14px}
+.notif small{color:var(--muted)}
+.toasts{position:fixed;z-index:80;right:20px;bottom:20px;display:grid;gap:8px;justify-items:end;pointer-events:none}
+.toast{pointer-events:auto;max-width:min(380px,calc(100vw - 32px));background:var(--card2);border:1px solid var(--line2);border-radius:14px;padding:10px 14px;box-shadow:var(--shadow);animation:rise .2s;font-size:14px}
+.toast.xp{border-color:color-mix(in srgb,var(--xp) 55%,transparent)}
+.toast.bad{border-color:color-mix(in srgb,var(--bad) 55%,transparent)}
+.floatxp{position:fixed;z-index:90;pointer-events:none;font-family:var(--font-d);font-weight:700;font-size:26px;color:var(--xp);transform:translate(-50%,0);animation:floatup 1.1s cubic-bezier(.2,.7,.2,1) forwards;text-shadow:0 2px 14px rgba(0,0,0,.35)}
+@keyframes floatup{0%{opacity:0;transform:translate(-50%,10px) scale(.8)}20%{opacity:1;transform:translate(-50%,-6px) scale(1.15)}100%{opacity:0;transform:translate(-50%,-70px) scale(1)}}
+.levelup{position:fixed;inset:0;z-index:95;display:grid;place-items:center;background:rgba(5,7,16,.72);animation:fade .2s}
+.lu{text-align:center;padding:36px 48px;border-radius:28px;background:var(--card);border:1px solid color-mix(in srgb,var(--xp) 50%,transparent);box-shadow:0 0 90px var(--xp-soft);animation:rise .35s cubic-bezier(.2,.9,.3,1.2)}
+.lu h2{font-size:38px;letter-spacing:.02em;color:var(--xp)}
+.lu .big{font-family:var(--font-d);font-size:110px;font-weight:700;line-height:1;margin:6px 0;animation:pop .6s .25s both}
+.lu p{color:var(--muted)}
+.bottomnav{display:none}
+.errbanner{background:var(--bad-soft);color:var(--bad);border:1px solid color-mix(in srgb,var(--bad) 40%,transparent);padding:10px 14px;border-radius:14px;margin-bottom:14px;font-size:14px}
+
+.av{width:22px;height:22px;border-radius:50%;object-fit:cover;flex:none}
+.postby{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);margin-top:8px}
+.note{background:var(--accent-soft);border-radius:14px;padding:10px 14px;font-size:14px;color:var(--muted);margin-bottom:14px}
+@media (max-width:1020px){
+  .hero{grid-template-columns:1fr 1fr}
+  .hero>div:first-child{grid-column:1/-1;border-bottom:1px solid var(--line)}
+  .hero>div:nth-child(2){border-left:0}
+  .cols-2,.cols-3{grid-template-columns:1fr}
+  .cols-4{grid-template-columns:repeat(2,1fr)}
+}
+@media (max-width:860px){
+  .app{grid-template-columns:1fr}
+  .side{display:none}
+  .main{padding:0 14px 110px}
+  .bottomnav{display:grid;grid-template-columns:repeat(5,1fr);position:fixed;left:0;right:0;bottom:0;z-index:30;background:color-mix(in srgb,var(--card) 94%,transparent);backdrop-filter:blur(14px);border-top:1px solid var(--line);padding:6px 6px calc(6px + env(safe-area-inset-bottom,0px))}
+  .bottomnav a,.bottomnav button{display:grid;justify-items:center;gap:2px;padding:6px 0;font-size:11px;font-weight:600;color:var(--faint);background:none;border:0;border-radius:12px;position:relative}
+  .bottomnav .on{color:var(--accent)}
+  .bottomnav .badge{position:absolute;top:2px;left:calc(50% + 6px);background:var(--bad);color:#fff;border-radius:99px;font-size:10px;padding:0 5px}
+  .add-btn{display:none!important}
+  .fab{display:grid;place-items:center;position:fixed;z-index:31;right:16px;bottom:calc(76px + env(safe-area-inset-bottom,0px));width:56px;height:56px;border-radius:50%;border:0;background:var(--accent);color:var(--accent-ink);box-shadow:0 10px 30px rgba(0,0,0,.4)}
+  .toasts{right:12px;left:12px;bottom:calc(140px + env(safe-area-inset-bottom,0px));justify-items:center}
+  .saved span{display:none}
+  .overlay{align-items:end;padding:0}
+  .modal{border-radius:22px 22px 0 0;max-height:92dvh;width:100%!important}
+  .page-h h1{font-size:26px}
+  .notifpanel{right:12px}
+}
+@media (max-width:560px){
+  .hero{grid-template-columns:1fr}
+  .hero>div+div{border-left:0;border-top:1px solid var(--line)}
+  .fgrid,.choice{grid-template-columns:1fr}
+  .hw{grid-template-columns:auto minmax(0,1fr);gap:12px}
+  .hw-side{grid-column:2;flex-direction:row;align-items:center;justify-content:space-between}
+  .hb{grid-template-columns:90px minmax(0,1fr) 44px}
+  .src{grid-template-columns:90px minmax(0,1fr)}
+  .src img{width:90px;height:90px}
+  .day{min-height:58px;padding:4px}
+  .cols-4{grid-template-columns:1fr 1fr}
+  .lu{padding:28px 30px}
+}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+<div id="boot" class="boot"><div class="boot-card"><div class="boot-mark"></div><p>Restoring your agenda…</p></div></div>
+<div id="app" hidden></div>
+<div id="modal-root"></div>
+<div id="toasts" class="toasts" aria-live="polite"></div>
+
+<script>
+'use strict';
+/* =====================================================================
+   1. UTILITIES
+   ===================================================================== */
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid=(p='id')=>p+'_'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+const pad=n=>String(n).padStart(2,'0');
+const ymd=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const todayStr=()=>ymd(new Date());
+const nowHM=()=>{const d=new Date();return pad(d.getHours())+':'+pad(d.getMinutes())};
+const parseYmd=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s||'');if(!m)return null;const d=new Date(+m[1],+m[2]-1,+m[3]);return isNaN(d)?null:d};
+const addDays=(s,n)=>{const d=parseYmd(s);d.setDate(d.getDate()+n);return ymd(d)};
+const dayDiff=(a,b)=>Math.round((parseYmd(b)-parseYmd(a))/864e5);
+const weekStart=s=>{const d=parseYmd(s);return addDays(s,-((d.getDay()+6)%7))};
+const WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'], WDL=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONL=['January','February','March','April','May','June','July','August','September','October','November','December'];
+const fmtDate=(s,wd=false)=>{const d=parseYmd(s);if(!d)return '—';return (wd?WD[d.getDay()]+', ':'')+MON[d.getMonth()]+' '+d.getDate()};
+const fmtTime=t=>{if(!/^\d{2}:\d{2}$/.test(t||''))return '';const [h,m]=t.split(':').map(Number);return ((h%12)||12)+':'+pad(m)+' '+(h<12?'AM':'PM')};
+const fmtNum=n=>Number(n||0).toLocaleString('en-US');
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const debounce=(fn,ms)=>{let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms)}};
+const clamp=(n,a,b)=>Math.min(b,Math.max(a,n));
+
+/* =====================================================================
+   2. ICONS
+   ===================================================================== */
+const ICONS={
+ dashboard:'<rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/>',
+ agenda:'<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+ homework:'<rect x="3" y="3" width="18" height="18" rx="5"/><path d="m8 12 3 3 5-6"/>',
+ calendar:'<rect x="3" y="4" width="18" height="17" rx="4"/><path d="M8 2v4M16 2v4M3 10h18"/>',
+ subjects:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5V21h16"/>',
+ achievements:'<circle cx="12" cy="9" r="6"/><path d="m8.5 14-1.5 7 5-3 5 3-1.5-7"/>',
+ stats:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+ settings:'<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+ more:'<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>',
+ plus:'<path d="M12 5v14M5 12h14"/>',
+ search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+ bell:'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10 20a2 2 0 0 0 4 0"/>',
+ sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+ moon:'<path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z"/>',
+ image:'<rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>',
+ edit:'<path d="M4 20h4L19 9l-4-4L4 16z"/>',
+ trash:'<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+ x:'<path d="M6 6l12 12M18 6 6 18"/>',
+ left:'<path d="m15 6-6 6 6 6"/>',right:'<path d="m9 6 6 6-6 6"/>',
+ clip:'<path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"/>',
+ download:'<path d="M12 4v12M7 11l5 5 5-5M5 20h14"/>',
+ upload:'<path d="M12 16V4M7 9l5-5 5 5M5 20h14"/>',
+ refresh:'<path d="M20 11a8 8 0 1 0 1 5"/><path d="M20 5v6h-6"/>',
+ clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+ pencil:'<path d="M4 20h4L19 9l-4-4L4 16z"/>',
+ type:'<path d="M4 7V5h16v2M9 19h6M12 5v14"/>',
+ class:'<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17.5" cy="9" r="2.5"/><path d="M16.5 14.2A5.5 5.5 0 0 1 21.5 20"/>',
+ flame:'<path d="M12 3c1 4 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 1-9z"/>',
+  students:'<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2A5.5 5.5 0 0 1 21.5 20"/>'
+};
+const ico=(n,s=20)=>`<svg class="ico" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]||''}</svg>`;
+const CHECK_SVG='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>';
+
+/* =====================================================================
+   3. DOMAIN CONFIG
+   ===================================================================== */
+const SCHEMA_VERSION=1;
+const DIFF={easy:{label:'Easy',xp:25},medium:{label:'Medium',xp:50},hard:{label:'Hard',xp:75},veryhard:{label:'Very hard',xp:100}};
+const PRIO={low:{label:'Low',w:2},medium:{label:'Medium',w:1},high:{label:'High',w:0}};
+const TYPES={homework:'Homework',test:'Test',project:'Project'};
+const ACCENTS=['#e58f5b','#7aa2ff','#9b8cff','#5fd08a','#f06fa8','#4cc9e0','#e6c04f','#58b8a0','#c78bff','#d9a066','#ff7a7a','#8fd14f'];
+const BONUS={earlyPct:.2,daily:25,streakPerDay:5,streakCap:7};
+const DEFAULT_SUBJECTS=[
+ ['arabic','Arabic','ع','#e58f5b'],['english','English','Aa','#7aa2ff'],['math','Math','∑','#9b8cff'],
+ ['biology','Biology','🧬','#5fd08a'],['chemistry','Chemistry','⚗️','#f06fa8'],['physics','Physics','⚛️','#4cc9e0'],
+ ['economics','Economics','📈','#e6c04f'],['geography','Geography','🌍','#58b8a0'],['civics','Civics','⚖️','#c78bff'],
+ ['history','History','🏛️','#d9a066'],['french','French','Fr','#ff7a7a']
+];
+const SUBJECT_ALIASES={math:['maths','mathematics','mat'],biology:['bio','svt'],chemistry:['chem'],physics:['phys'],economics:['econ','eco'],geography:['geo'],history:['hist'],french:['fr','francais','français'],english:['eng'],arabic:['عربي','عربى','لغة عربية'],civics:['civic','civics education']};
+const defaultSettings=()=>({theme:'dark',notify:{dueToday:true,dueTomorrow:true,overdue:true,xp:true,levelUp:true,achievement:true,streak:true},browserNotify:false,aiReading:true,showCompleted:true});
+const defaultStudent=()=>({id:'student',name:'',className:'',isAdmin:false,profileComplete:false,totalXP:0,level:1,completedCount:0,earlyCount:0,activeDays:[],perfectDays:[],bestStreak:0,createdAt:new Date().toISOString(),schema:SCHEMA_VERSION});
+
+/* Level curve: Lv1 0, Lv2 500, Lv3 1200, Lv4 2100, Lv5 3200 … (each step costs 200 XP more than the last) */
+const xpFor=n=>(n-1)*(100*n+300);
+function levelInfo(xp){let l=1;while(xp>=xpFor(l+1))l++;const a=xpFor(l),b=xpFor(l+1);
+  return{level:l,floor:a,next:b,into:xp-a,span:b-a,pct:Math.round((xp-a)/(b-a)*100),remaining:b-xp}}
+
+/* =====================================================================
+   4. PERSISTENCE LAYER  (UI → state → Data → IndexedDB)
+   ===================================================================== */
+const DB_NAME='school-agenda', DB_VER=2;
+const DATA_FORMAT_VERSION=2;
+
+/* =====================================================================
+   4a. SUPABASE SHARED CLOUD
+   Replace only these two placeholders with values from Supabase
+   Dashboard → Project Settings → API.
+   Use the publishable/anon key, NEVER a service-role key.
+   Enable Auth → Anonymous Sign-Ins in the Supabase project.
+   ===================================================================== */
+const SUPABASE_URL='https://wliiafvbmxxdqiqsbhiw.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY='sb_publishable_rVNgkZX-fn_QghuNLCpnBg_3dyWpJq2';
+const SUPABASE_BUCKET='class-agenda-images';
+const SUPABASE_CONFIGURED=!!(
+  SUPABASE_URL &&
+  SUPABASE_PUBLISHABLE_KEY &&
+  /^https?:\/\//i.test(SUPABASE_URL) &&
+  !SUPABASE_URL.includes('YOUR_') &&
+  !SUPABASE_PUBLISHABLE_KEY.includes('YOUR_')
+);
+/* Supabase normally persists browser sessions in localStorage. A standalone
+   file:// HTML app can have unreliable localStorage behavior, which can cause
+   a new anonymous Supabase user to be created every time the page is reopened.
+   Use IndexedDB as a second persistent backing store and mirror to localStorage
+   when it is available. Supabase supports custom async storage adapters. */
+const AUTH_DB_NAME='school-agenda-supabase-auth';
+const AUTH_STORE_NAME='kv';
+function authDb(){return new Promise((resolve,reject)=>{
+  try{
+    const req=indexedDB.open(AUTH_DB_NAME,1);
+    req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains(AUTH_STORE_NAME))db.createObjectStore(AUTH_STORE_NAME);};
+    req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error||new Error('Could not open auth storage.'));
+  }catch(e){reject(e)}
+})}
+async function authIdbGet(key){try{const db=await authDb();return await new Promise((res,rej)=>{const r=db.transaction(AUTH_STORE_NAME,'readonly').objectStore(AUTH_STORE_NAME).get(key);r.onsuccess=()=>res(r.result??null);r.onerror=()=>rej(r.error)});}catch(e){return null}}
+async function authIdbSet(key,value){try{const db=await authDb();await new Promise((res,rej)=>{const r=db.transaction(AUTH_STORE_NAME,'readwrite').objectStore(AUTH_STORE_NAME).put(value,key);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)});}catch(e){console.warn('Auth IndexedDB write failed:',e)}}
+async function authIdbRemove(key){try{const db=await authDb();await new Promise((res,rej)=>{const r=db.transaction(AUTH_STORE_NAME,'readwrite').objectStore(AUTH_STORE_NAME).delete(key);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)});}catch(e){}}
+const supabaseAuthStorage={
+  async getItem(key){
+    let local=null;try{local=window.localStorage?.getItem(key)||null}catch(e){}
+    if(local){await authIdbSet(key,local);return local;}
+    return authIdbGet(key);
+  },
+  async setItem(key,value){
+    try{window.localStorage?.setItem(key,value)}catch(e){}
+    await authIdbSet(key,value);
+  },
+  async removeItem(key){
+    try{window.localStorage?.removeItem(key)}catch(e){}
+    await authIdbRemove(key);
+  }
+};
+const supabaseClient=(SUPABASE_CONFIGURED&&window.supabase&&typeof window.supabase.createClient==='function')
+  ? window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{
+      auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storage:supabaseAuthStorage}
+    })
+  : null;
+
+const ALLOWED_CLASSES=['10A','10B','10AS','9A','9B','9C','9D','9AS'];
+function normalizeClassName(v){const raw=String(v||'').trim().replace(/\s+/g,' ');const hit=ALLOWED_CLASSES.find(c=>c.toLowerCase()===raw.toLowerCase());return hit||raw}
+function classKey(v){
+  /* Same canonical identity used by the database. */
+  return String(v||'').trim().toLowerCase()
+    .replace(/^grade\s*/i,'')
+    .replace(/[^a-z0-9]+/g,'');
+}
+function sharedUuid(){try{return crypto.randomUUID()}catch(e){return uid('uuid').replace(/[^a-zA-Z0-9_-]/g,'')}}
+let SUPABASE_AUTH_LAST_ERROR='';
+function sharedError(e,fallback='Shared data could not be loaded.'){
+  const raw=String(e?.message||e?.details||e?.hint||SUPABASE_AUTH_LAST_ERROR||'').trim();
+  if(e?.code==='23505'||/already in use|duplicate.*name|name.*already.*used/i.test(raw)){
+    return 'That name is already in use. Please choose a different name.';
+  }
+  return raw||fallback;
+}
+function describeSupabaseAuthError(e){
+  const raw=String(e?.message||e?.error_description||e?.details||e?.hint||'').trim();
+  const code=String(e?.code||e?.error||'').trim();
+  const status=e?.status?` HTTP ${e.status}`:'';
+  if(/anonymous.*disabled|anonymous.*not.*enabled|anonymous sign[- ]ins/i.test(raw)){
+    return 'Supabase Anonymous Sign-Ins are disabled. In Supabase open Authentication → Providers → Anonymous Sign-Ins and enable them.';
+  }
+  if(/captcha|bot|turnstile|hcaptcha/i.test(raw)){
+    return 'Supabase is requiring CAPTCHA protection for anonymous sign-in. Disable CAPTCHA for testing, or add the CAPTCHA flow to this app.';
+  }
+  if(/failed to fetch|networkerror|network request/i.test(raw)){
+    return 'The browser could not reach Supabase. Check your internet connection and the Supabase project URL.';
+  }
+  return raw||`Supabase authentication failed${code?` (${code})`:''}${status}.`;
+}
+let SUPABASE_CACHED_USER=null;
+let SUPABASE_AUTH_PROMISE=null;
+if(supabaseClient){supabaseClient.auth.onAuthStateChange((_event,session)=>{SUPABASE_CACHED_USER=session?.user||null;});}
+async function ensureSupabaseUser(){
+  if(!SUPABASE_CONFIGURED||!supabaseClient){SUPABASE_AUTH_LAST_ERROR='Supabase is not configured.';return null;}
+  if(SUPABASE_CACHED_USER?.id)return SUPABASE_CACHED_USER;
+  if(SUPABASE_AUTH_PROMISE)return SUPABASE_AUTH_PROMISE;
+  SUPABASE_AUTH_PROMISE=(async()=>{
+    try{
+      SUPABASE_AUTH_LAST_ERROR='';
+      const {data,error}=await supabaseClient.auth.getSession();
+      if(error)throw error;
+      if(data?.session?.user){SUPABASE_CACHED_USER=data.session.user;return SUPABASE_CACHED_USER;}
+      const r=await supabaseClient.auth.signInAnonymously();
+      if(r.error){SUPABASE_AUTH_LAST_ERROR=describeSupabaseAuthError(r.error);throw r.error;}
+      const u=r.data?.user||r.data?.session?.user;
+      if(u){SUPABASE_CACHED_USER=u;return u;}
+      SUPABASE_AUTH_LAST_ERROR='Supabase returned no anonymous user/session.';
+      return null;
+    }catch(e){
+      if(!SUPABASE_AUTH_LAST_ERROR)SUPABASE_AUTH_LAST_ERROR=describeSupabaseAuthError(e);
+      console.error('Supabase authentication error:',e);
+      return null;
+    }finally{SUPABASE_AUTH_PROMISE=null;}
+  })();
+  return SUPABASE_AUTH_PROMISE;
+}
+async function cloudOwnProfile(userArg=null){
+  if(!supabaseClient)return null;
+  const user=userArg||await ensureSupabaseUser();if(!user)return null;
+  const {data,error}=await supabaseClient.from('students')
+    .select('id,name,class_name,class_key,is_admin,created_at,updated_at')
+    .eq('id',user.id).maybeSingle();
+  if(error)throw error;
+  return data||null;
+}
+async function cloudRegisterStudent(name,className,userArg=null){
+  if(!supabaseClient)throw new Error('Shared database is not configured yet.');
+  const user=userArg||await ensureSupabaseUser();if(!user)throw new Error('Could not create the shared student session.');
+  const cleanName=String(name||'').trim().replace(/\s+/g,' ').slice(0,40);
+  const cleanClass=normalizeClassName(className).slice(0,40);
+  const {data,error}=await supabaseClient.rpc('register_student',{
+    p_name:cleanName,
+    p_class_name:cleanClass
+  });
+  if(error)throw error;
+  const profile=data||await cloudOwnProfile(user);
+  if(profile){
+    /* Auth metadata is display-only. RLS/admin authorization still uses public.students. */
+    try{await supabaseClient.auth.updateUser({data:{name:profile.name,display_name:profile.name,class_name:profile.class_name,class_key:profile.class_key,is_admin:!!profile.is_admin}})}catch(metaErr){console.warn('Could not sync Auth user metadata:',metaErr)}
+  }
+  return profile;
+}
+async function cloudClaimAdmin(code){
+  if(!supabaseClient)throw new Error('Shared database is not configured yet.');
+  const user=await ensureSupabaseUser();
+  if(!user)throw new Error(SUPABASE_AUTH_LAST_ERROR||'Could not create the shared student session.');
+  if(!S.student.name||!S.student.className)throw new Error('Your profile is incomplete. Enter your name and class first.');
+
+  /* Register the exact current anonymous account and verify the admin code
+     inside one server-side transaction. This removes the old race where the
+     browser could switch sessions between registration and admin verification. */
+  const cleanCode=String(code??'').trim();
+  const {data,error}=await supabaseClient.rpc('register_student_and_claim_admin',{
+    p_name:String(S.student.name).trim().slice(0,40),
+    p_class_name:normalizeClassName(S.student.className).slice(0,40),
+    admin_code:cleanCode
+  });
+  if(error){
+    if(/incorrect admin code/i.test(String(error.message||'')))throw new Error('Incorrect admin code.');
+    throw error;
+  }
+  if(!data)throw new Error('The Supabase account could not be registered for admin access.');
+  try{await supabaseClient.auth.updateUser({data:{name:data.name,display_name:data.name,class_name:data.class_name,class_key:data.class_key,is_admin:true}})}catch(metaErr){console.warn('Could not sync Auth admin metadata:',metaErr)}
+  return true;
+}
+async function cloudUploadImage(data,path){
+  if(!supabaseClient||!data||!path)throw new Error('Shared image storage is not configured.');
+  let source=typeof data==='string'?dataUrlToBlob(data):data;
+  /* Every shared image is compressed before it reaches Supabase. This keeps
+     iPhone/mobile uploads small while preserving a readable 1600px copy. */
+  try{
+    const processed=await processImage(source);
+    source=processed.blob;
+  }catch(e){
+    if((source?.size||0)>900*1024)throw new Error('That photo is too large to share. Please choose a smaller image.');
+  }
+  const {error}=await supabaseClient.storage.from(SUPABASE_BUCKET).upload(path,source,{
+    contentType:'image/jpeg',upsert:true,cacheControl:'3600'
+  });
+  if(error)throw error;
+  return path;
+}
+async function cloudSignedImage(path){
+  if(!supabaseClient||!path)return null;
+  const {data,error}=await supabaseClient.storage.from(SUPABASE_BUCKET).createSignedUrl(path,3600);
+  if(error)throw error;
+  return data?.signedUrl||null;
+}
+async function cloudDeleteImage(path){
+  if(!supabaseClient||!path)return;
+  try{await supabaseClient.storage.from(SUPABASE_BUCKET).remove([path])}
+  catch(e){console.warn('Could not delete shared image:',e)}
+}
+async function cloudDeleteImageIfUnused(path,excludePostId=null){
+  if(!supabaseClient||!path)return;
+  try{
+    let q=supabaseClient.from('class_agenda_posts').select('id').eq('image_path',path).limit(1);
+    if(excludePostId)q=q.neq('id',excludePostId);
+    const {data,error}=await q;
+    if(error){console.warn('Could not check shared image references:',error);return}
+    if(!data?.length)await cloudDeleteImage(path);
+  }catch(e){console.warn('Could not clean up shared image:',e)}
+}
+const STORES=[['meta','key'],['subjects','id'],['homework','id'],['achievements','id'],['files','id'],['blobs','id'],['xpLog','id'],['notifications','id']];
+const Data={
+  db:null, ok:false, pending:0, chain:Promise.resolve(), onStatus:()=>{}, bc:null,
+  open(){return new Promise((res,rej)=>{
+    if(!window.indexedDB)return rej(new Error('IndexedDB is not available in this browser.'));
+    let req;try{req=indexedDB.open(DB_NAME,DB_VER)}catch(e){return rej(e)}
+    req.onupgradeneeded=ev=>{
+      const db=req.result;
+      /* SAFETY RULE: schema upgrades may ONLY add missing stores.
+         Never clear, replace, or rewrite existing records during an app update. */
+      for(const[n,k]of STORES)if(!db.objectStoreNames.contains(n))db.createObjectStore(n,{keyPath:k});
+      /* Existing object stores are intentionally left untouched. */
+    };
+    req.onsuccess=()=>{this.db=req.result;this.ok=true;this.db.onversionchange=()=>{this.db.close();this.ok=false};res()};
+    req.onerror=()=>rej(req.error||new Error('Could not open the database.'));
+    req.onblocked=()=>rej(new Error('The database is blocked by another tab.'));
+  })},
+  get(store,key){return new Promise((res,rej)=>{const r=this.db.transaction(store).objectStore(store).get(key);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})},
+  all(store){return new Promise((res,rej)=>{const r=this.db.transaction(store).objectStore(store).getAll();r.onsuccess=()=>res(r.result||[]);r.onerror=()=>rej(r.error)})},
+  _w(pairs,dels=[]){return new Promise((res,rej)=>{const names=[...new Set([...pairs.map(p=>p[0]),...dels.map(p=>p[0])])];
+    const tx=this.db.transaction(names,'readwrite');
+    pairs.forEach(([s,v])=>tx.objectStore(s).put(v));dels.forEach(([s,k])=>tx.objectStore(s).delete(k));
+    tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error||new Error('Write aborted'))})},
+  /* All writes go through one ordered queue so the latest change always wins. */
+  write(pairs,dels=[]){
+    if(!this.ok){this.onStatus('unsaved');return Promise.resolve()}
+    this.pending++;this.onStatus('saving');
+    const p=this.chain.then(()=>this._w(pairs,dels));this.chain=p.catch(()=>{});
+    return p.then(()=>{this.pending--;if(!this.pending){this.onStatus('saved');try{this.bc&&this.bc.postMessage('changed')}catch(e){}}},
+                  e=>{this.pending--;this.onStatus('error',e);throw e});
+  },
+  dump(){return new Promise((res,rej)=>{const names=STORES.map(s=>s[0]);const tx=this.db.transaction(names);const out={};
+    names.forEach(n=>{const r=tx.objectStore(n).getAll();r.onsuccess=()=>out[n]=r.result||[]});
+    tx.oncomplete=()=>res(out);tx.onerror=()=>rej(tx.error)})},
+  /* Replace everything atomically: if anything fails the transaction aborts and old data stays. */
+  replaceAll(snap){return new Promise((res,rej)=>{const names=STORES.map(s=>s[0]);const tx=this.db.transaction(names,'readwrite');
+    names.forEach(n=>{const os=tx.objectStore(n);os.clear();(snap[n]||[]).forEach(rec=>os.put(rec))});
+    tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error||new Error('Aborted'))})}
+};
+
+/* ----- in-memory state (a cache of what is in the database) ----- */
+const S={student:defaultStudent(),settings:defaultSettings(),subjects:[],homework:[],ach:{},files:{},xpLog:[],notifs:[],issues:0,memoryOnly:false};
+
+const reportSaveError=e=>{console.error(e);toast('Couldn\u2019t save your last change. Check free storage space, then try again.',{kind:'bad',ms:6000})};
+const safe=p=>p.catch(reportSaveError);
+const P={
+  student:()=>safe(Data.write([['meta',{key:'student',value:S.student}]])),
+  settings:()=>safe(Data.write([['meta',{key:'settings',value:S.settings}]])),
+  hw:h=>safe(Data.write([['homework',h]])),
+  delHw:id=>safe(Data.write([],[['homework',id]])),
+  subject:s=>safe(Data.write([['subjects',s]])),
+  delSubject:id=>safe(Data.write([],[['subjects',id]])),
+  ach:a=>safe(Data.write([['achievements',a]])),
+  xp:e=>safe(Data.write([['xpLog',e]])),
+  notif:n=>safe(Data.write([['notifications',n]])),
+  delNotifs:ids=>safe(Data.write([],ids.map(i=>['notifications',i]))),
+  file:(meta,data)=>safe(Data.write([['files',meta],['blobs',{id:meta.id,data}]])),
+  delFile:id=>safe(Data.write([],[['files',id],['blobs',id]]))
+};
+
+/* ----- record sanitizers: a damaged record is skipped, never allowed to break the rest ----- */
+function normHW(r){
+  if(!r||typeof r!=='object'||!r.id)return null;
+  const now=new Date().toISOString();
+  return{id:String(r.id),type:TYPES[r.type]?r.type:'homework',subjectId:String(r.subjectId||''),title:String(r.title||'Untitled'),
+    description:String(r.description||''),dueDate:parseYmd(r.dueDate)?r.dueDate:todayStr(),dueTime:/^\d{2}:\d{2}$/.test(r.dueTime||'')?r.dueTime:'',
+    priority:PRIO[r.priority]?r.priority:'medium',difficulty:DIFF[r.difficulty]?r.difficulty:'medium',
+    xp:Number.isFinite(+r.xp)?Math.max(0,Math.round(+r.xp)):DIFF.medium.xp,xpCustom:!!r.xpCustom,
+    completed:!!r.completed,completedAt:r.completedAt||null,xpAwarded:!!r.xpAwarded,notes:String(r.notes||''),
+    attachments:Array.isArray(r.attachments)?r.attachments.map(String):[],sourceImageId:r.sourceImageId||null,classPostId:r.classPostId||null,
+    createdAt:r.createdAt||now,updatedAt:r.updatedAt||r.createdAt||now};
+}
+function normSubject(r,i){
+  if(!r||typeof r!=='object'||!r.id)return null;
+  return{id:String(r.id),name:String(r.name||'Subject'),icon:String(r.icon||'•').slice(0,4),accent:/^#[0-9a-f]{6}$/i.test(r.accent||'')?r.accent:ACCENTS[i%ACCENTS.length],builtin:!!r.builtin,order:Number.isFinite(+r.order)?+r.order:i,createdAt:r.createdAt||new Date().toISOString()};
+}
+function normStudent(v){
+  const d=defaultStudent();const s=Object.assign(d,v&&typeof v==='object'?v:{});
+  s.totalXP=Math.max(0,Math.round(+s.totalXP||0));s.completedCount=Math.max(0,+s.completedCount||0);s.earlyCount=Math.max(0,+s.earlyCount||0);
+  s.activeDays=Array.isArray(s.activeDays)?s.activeDays.filter(x=>parseYmd(x)):[];s.perfectDays=Array.isArray(s.perfectDays)?s.perfectDays.filter(x=>parseYmd(x)):[];
+  s.bestStreak=Math.max(0,+s.bestStreak||0);s.name=String(s.name||'').slice(0,40);s.className=String(s.className||'').slice(0,40);s.isAdmin=!!s.isAdmin;s.profileComplete=!!s.profileComplete||!!(s.name&&s.className);s.level=levelInfo(s.totalXP).level;return s;
+}
+function normSettings(v){
+  const d=defaultSettings();if(!v||typeof v!=='object')return d;
+  return{...d,...v,notify:{...d.notify,...(v.notify&&typeof v.notify==='object'?v.notify:{})}};
+}
+const seedSubjects=()=>DEFAULT_SUBJECTS.map(([id,name,icon,accent],i)=>({id,name,icon,accent,builtin:true,order:i,createdAt:new Date().toISOString()}));
+
+/* ----- startup: restore saved data first; only seed defaults if there is truly nothing saved ----- */
+async function loadState(){
+  const [meta,subs,hws,ach,files,xp,notifs]=await Promise.all(['meta','subjects','homework','achievements','files','xpLog','notifications'].map(s=>Data.all(s)));
+  const m=Object.fromEntries(meta.filter(r=>r&&r.key).map(r=>[r.key,r.value]));
+  const fresh=!m.initialized&&!m.student&&!subs.length&&!hws.length;
+  let issues=0;
+  S.student=normStudent(m.student);S.settings=normSettings(m.settings);
+  S.subjects=subs.map(normSubject).filter(Boolean).sort((a,b)=>a.order-b.order);
+  S.homework=hws.map(r=>{const h=normHW(r);if(!h)issues++;return h}).filter(Boolean);
+  S.ach=Object.fromEntries(ach.filter(a=>a&&a.id).map(a=>[a.id,a]));
+  S.files=Object.fromEntries(files.filter(f=>f&&f.id).map(f=>[f.id,f]));
+  S.xpLog=xp.filter(e=>e&&e.id&&Number.isFinite(+e.amount));
+  S.notifs=notifs.filter(n=>n&&n.id).sort((a,b)=>String(b.ts).localeCompare(String(a.ts)));
+  S.issues=issues;
+  const writes=[];
+  /* Migration is additive-only: existing records are never replaced by defaults. */
+  if(fresh){
+    writes.push(['meta',{key:'student',value:S.student}],['meta',{key:'settings',value:S.settings}],['meta',{key:'schema',value:SCHEMA_VERSION}],['meta',{key:'dataFormat',value:DATA_FORMAT_VERSION}],['meta',{key:'initialized',value:true}]);
+  }else{
+    if(!m.student)writes.push(['meta',{key:'student',value:S.student}]);
+    if(!m.settings)writes.push(['meta',{key:'settings',value:S.settings}]);
+    if(!m.schema)writes.push(['meta',{key:'schema',value:SCHEMA_VERSION}]);
+    if(m.dataFormat!==DATA_FORMAT_VERSION)writes.push(['meta',{key:'dataFormat',value:DATA_FORMAT_VERSION}]);
+    if(!m.initialized)writes.push(['meta',{key:'initialized',value:true}]);
+  }
+  if(!S.subjects.length){S.subjects=seedSubjects();S.subjects.forEach(s=>writes.push(['subjects',s]));}   /* additive only */
+  if(writes.length&&Data.ok)await Data.write(writes);
+  applyTheme();
+}
+
+/* =====================================================================
+   5. HELPERS ON STATE
+   ===================================================================== */
+const UNKNOWN={id:'',name:'Unknown subject',icon:'?',accent:'#8a90b3'};
+const subj=id=>S.subjects.find(s=>s.id===id)||UNKNOWN;
+const PW=p=>PRIO[p]?PRIO[p].w:1;
+const cmp=(a,b)=>a.dueDate.localeCompare(b.dueDate)||(a.dueTime||'99:99').localeCompare(b.dueTime||'99:99')||PW(a.priority)-PW(b.priority)||a.title.localeCompare(b.title);
+function statusOf(h){
+  if(h.completed)return'completed';const t=todayStr();
+  if(h.dueDate<t)return'overdue';
+  if(h.dueDate===t&&h.dueTime&&h.dueTime<nowHM())return'overdue';
+  return'pending';
+}
+function dueLabel(h){
+  const t=todayStr(),n=dayDiff(t,h.dueDate);
+  if(n===0)return'Today';if(n===1)return'Tomorrow';if(n===-1)return'Yesterday';
+  if(n>1&&n<7)return WDL[parseYmd(h.dueDate).getDay()];return fmtDate(h.dueDate);
+}
+const localDate=iso=>{const d=new Date(iso);return isNaN(d)?'':ymd(d)};
+const autoXP=d=>(DIFF[d]||DIFF.medium).xp;
+
+function getStreak(){
+  const days=new Set(S.student.activeDays);
+  if(!days.size)return{current:0,best:S.student.bestStreak||0,doneToday:false};
+  const today=todayStr(),first=[...days].sort()[0];
+  const missed=d=>S.homework.some(h=>h.dueDate===d&&(!h.completed||localDate(h.completedAt)>d));
+  let d=today,count=0;
+  while(d>=first){
+    if(days.has(d))count++;
+    else if(d===today){/* today isn't over yet */}
+    else if(!missed(d)){/* a day off or nothing outstanding: no penalty */}
+    else break;
+    d=addDays(d,-1);
+  }
+  return{current:count,best:Math.max(S.student.bestStreak||0,count),doneToday:days.has(today)};
+}
+function streakHistory(){
+  const today=todayStr(),start=addDays(weekStart(today),-28),days=new Set(S.student.activeDays),out=[];
+  for(let i=0;i<35;i++){const d=addDays(start,i);out.push({d,on:days.has(d),today:d===today,fut:d>today})}
+  return out;
+}
+const dailyXP=()=>{const m={};S.xpLog.forEach(e=>{m[e.date]=(m[e.date]||0)+(+e.amount||0)});return m};
+const maxDailyXP=()=>Math.max(0,...Object.values(dailyXP()));
+
+/* =====================================================================
+   6. ACHIEVEMENTS
+   ===================================================================== */
+const ACH=[
+ {id:'first',name:'First Assignment',desc:'Complete your first homework.',icon:'🌱',goal:1,val:()=>S.student.completedCount},
+ {id:'perfect',name:'Perfect Day',desc:'Complete every assignment due in one day.',icon:'✨',goal:1,val:()=>S.student.perfectDays.length},
+ {id:'fire',name:'On Fire',desc:'Complete homework 5 days in a row.',icon:'🔥',goal:5,val:()=>getStreak().best},
+ {id:'early',name:'Early Bird',desc:'Complete 5 assignments before their due dates.',icon:'🐦',goal:5,val:()=>S.student.earlyCount},
+ {id:'machine',name:'Homework Machine',desc:'Complete 50 assignments.',icon:'⚙️',goal:50,val:()=>S.student.completedCount},
+ {id:'club',name:'100 Club',desc:'Earn 100 XP in one day.',icon:'💯',goal:100,val:maxDailyXP},
+ {id:'week',name:'Week Warrior',desc:'Reach a 7-day streak.',icon:'🗓️',goal:7,val:()=>getStreak().best},
+ {id:'lv5',name:'Rising Star',desc:'Reach level 5.',icon:'⭐',goal:5,val:()=>levelInfo(S.student.totalXP).level},
+ {id:'rounder',name:'All-Rounder',desc:'Earn XP in 5 different subjects.',icon:'🧭',goal:5,val:()=>new Set(S.xpLog.filter(e=>e.reason==='Assignment').map(e=>e.subjectId)).size},
+ {id:'photo',name:'Photo Finish',desc:'Add homework from an agenda photo.',icon:'📸',goal:1,val:()=>S.homework.filter(h=>h.sourceImageId).length}
+];
+function checkAchievements(){
+  for(const def of ACH){
+    const prog=Math.min(def.goal,Math.floor(def.val()));
+    let rec=S.ach[def.id]||{id:def.id,progress:0,unlocked:false,unlockedAt:null};
+    const was=rec.unlocked,old=rec.progress;
+    rec={...rec,progress:prog};
+    if(!was&&prog>=def.goal){rec.unlocked=true;rec.unlockedAt=new Date().toISOString();}
+    if(rec.progress!==old||rec.unlocked!==was||!S.ach[def.id]){S.ach[def.id]=rec;P.ach(rec);}
+    if(rec.unlocked&&!was)notify('achievement',`Achievement unlocked: ${def.name}`,def.desc,{icon:def.icon});
+  }
+  const b=getStreak().best;if(b>S.student.bestStreak){S.student.bestStreak=b;P.student();}
+}
+
+/* =====================================================================
+   7. NOTIFICATIONS + TOASTS
+   ===================================================================== */
+function toast(msg,{kind='',ms=3400}={}){
+  const el=document.createElement('div');el.className='toast '+kind;el.textContent=msg;
+  const root=$('#toasts');root.appendChild(el);while(root.children.length>3)root.firstChild.remove();
+  setTimeout(()=>el.remove(),ms);
+}
+function pushNotif(n){S.notifs.unshift(n);P.notif(n);
+  if(S.notifs.length>100){const drop=S.notifs.splice(100);P.delNotifs(drop.map(x=>x.id))}
+  if(S.settings.browserNotify){try{if(Notification.permission==='granted')new Notification(n.title,{body:n.body})}catch(e){}}
+  updateChrome();}
+function notify(type,title,body='',{icon=''}={}){
+  if(!S.settings.notify[type])return;
+  pushNotif({id:uid('n'),type,title,body,icon,ts:new Date().toISOString(),read:false});
+  toast(icon?`${icon} ${title}`:title,{kind:type==='xp'?'xp':''});
+}
+function refreshReminders(){
+  const t=todayStr(),tm=addDays(t,1);
+  for(const h of S.homework){
+    if(h.completed)continue;
+    let type=null,title='';
+    if(statusOf(h)==='overdue'){type='overdue';title=`Overdue: ${subj(h.subjectId).name} – ${h.title}`}
+    else if(h.dueDate===t){type='dueToday';title=`Due today: ${subj(h.subjectId).name} – ${h.title}`}
+    else if(h.dueDate===tm){type='dueTomorrow';title=`Due tomorrow: ${subj(h.subjectId).name} – ${h.title}`}
+    if(!type||!S.settings.notify[type])continue;
+    const id=`r-${type}-${h.id}-${t}`;
+    if(S.notifs.some(n=>n.id===id))continue;
+    pushNotif({id,type,title,body:h.dueTime?`Due at ${fmtTime(h.dueTime)}`:'',icon:type==='overdue'?'⚠️':'⏰',ts:new Date().toISOString(),read:false});
+  }
+}
+
+/* =====================================================================
+   8. ACTIONS (the only place state is changed)
+   ===================================================================== */
+const A={
+  addHomework(d){
+    const now=new Date().toISOString();
+    const h=normHW({id:uid('hw'),type:d.type,subjectId:d.subjectId,title:d.title.trim(),description:d.description||'',dueDate:d.dueDate,dueTime:d.dueTime||'',
+      priority:d.priority,difficulty:d.difficulty,xp:d.xp,xpCustom:!!d.xpCustom,completed:false,xpAwarded:false,notes:d.notes||'',attachments:d.attachments||[],sourceImageId:d.sourceImageId||null,classPostId:d.classPostId||null,createdAt:now,updatedAt:now});
+    S.homework.push(h);P.hw(h);checkAchievements();refreshReminders();renderAll();return h;
+  },
+  updateHomework(id,patch){
+    const h=S.homework.find(x=>x.id===id);if(!h)return;
+    Object.assign(h,patch,{updatedAt:new Date().toISOString()});
+    const n=normHW(h);Object.assign(h,n);P.hw(h);renderAll();
+  },
+  async deleteHomework(id){
+    const h=S.homework.find(x=>x.id===id);if(!h)return;
+    S.homework=S.homework.filter(x=>x.id!==id);P.delHw(id);          /* XP already earned stays in the total */
+    for(const f of h.attachments){if(!S.homework.some(o=>o.attachments.includes(f))&&S.files[f]?.kind==='attachment'){delete S.files[f];P.delFile(f)}}
+    checkAchievements();renderAll();
+  },
+  toggle(id){
+    const h=S.homework.find(x=>x.id===id);if(!h)return null;
+    if(h.completed){h.completed=false;h.completedAt=null;h.updatedAt=new Date().toISOString();P.hw(h);renderAll();toast('Marked as not done. XP you earned is kept.');return null}
+    h.completed=true;h.completedAt=new Date().toISOString();h.updatedAt=h.completedAt;
+    let res=null;
+    if(!h.xpAwarded)res=awardXP(h);else toast('Done again – this one already gave you XP.');
+    P.hw(h);P.student();checkAchievements();renderAll();
+    if(res&&res.levelUp)showLevelUp(res.levelUp);
+    return res;
+  },
+  addSubject(d){
+    const s={id:uid('sub'),name:d.name.trim(),icon:(d.icon||'•').trim().slice(0,4)||'•',accent:d.accent,builtin:false,order:Math.max(-1,...S.subjects.map(x=>x.order))+1,createdAt:new Date().toISOString()};
+    S.subjects.push(s);P.subject(s);renderAll();return s;
+  },
+  updateSubject(id,d){const s=S.subjects.find(x=>x.id===id);if(!s)return;Object.assign(s,{name:d.name.trim()||s.name,icon:(d.icon||s.icon).trim().slice(0,4),accent:d.accent||s.accent});P.subject(s);renderAll()},
+  deleteSubject(id){S.subjects=S.subjects.filter(x=>x.id!==id);P.delSubject(id);renderAll()},
+  setSetting(path,val){
+    const parts=path.split('.');let o=S.settings;while(parts.length>1)o=o[parts.shift()];o[parts[0]]=val;
+    P.settings();if(path==='theme')applyTheme();renderAll();
+  },
+  setName(v){S.student.name=v.slice(0,40);S.student.profileComplete=!!(S.student.name.trim()&&S.student.className.trim());P.student();syncProfile();updateChrome();if(ui.route.name==='dashboard')renderAll()},
+  setProfile(name,cls){S.student.name=String(name||'').trim().slice(0,40);S.student.className=normalizeClassName(cls).slice(0,40);S.student.profileComplete=!!(S.student.name&&S.student.className);P.student();syncProfile();initClass();updateChrome();renderAll()},
+  setAdmin(v){S.student.isAdmin=!!v;P.student();Class.isAdmin=S.student.isAdmin;updateChrome();renderAll()}
+};
+
+/* XP engine: each assignment can award its XP exactly once (xpAwarded is never reset). */
+function awardXP(h){
+  const T=S.student,today=todayStr(),before=levelInfo(T.totalXP).level;let total=0;
+  const add=(amount,reason)=>{if(amount<=0)return;total+=amount;
+    const e={id:uid('xp'),ts:new Date().toISOString(),date:today,amount,reason,hwId:h.id,subjectId:h.subjectId,subjectName:subj(h.subjectId).name};
+    S.xpLog.push(e);P.xp(e)};
+  add(h.xp,'Assignment');
+  if(h.dueDate>today){add(Math.round(h.xp*BONUS.earlyPct),'Early bonus');T.earlyCount++}
+  h.xpAwarded=true;T.completedCount++;
+  const firstToday=!T.activeDays.includes(today);
+  if(firstToday)T.activeDays.push(today);
+  const stk=getStreak();
+  if(firstToday&&stk.current>=2){add(Math.min(stk.current,BONUS.streakCap)*BONUS.streakPerDay,'Streak bonus');
+    notify('streak',`${stk.current}-day streak`,'You\u2019re keeping it going.',{icon:'🔥'})}
+  const todays=S.homework.filter(x=>x.dueDate===today);
+  if(todays.length&&todays.every(x=>x.completed)&&!T.perfectDays.includes(today)){T.perfectDays.push(today);add(BONUS.daily,'Daily bonus');}
+  T.totalXP+=total;T.bestStreak=Math.max(T.bestStreak,stk.current);
+  const after=levelInfo(T.totalXP).level;T.level=after;
+  notify('xp',`+${total} XP`,`${subj(h.subjectId).name}: ${h.title}`);
+  if(after>before)notify('levelUp',`Level ${after}`,'You levelled up.',{icon:'⬆️'});
+  return{total,levelUp:after>before?after:null,from:before};
+}
+
+/* =====================================================================
+   9. FILES  (images are resized, stored in IndexedDB as data URLs; thumbnails kept with metadata)
+   ===================================================================== */
+const readAsDataURL=f=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=()=>rej(r.error);r.readAsDataURL(f)});
+function dataUrlToBlob(u){const [h,b]=u.split(',');const mime=/data:([^;]+)/.exec(h)?.[1]||'application/octet-stream';const bin=atob(b);const a=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i);return new Blob([a],{type:mime})}
+const canvasBlob=(c,type,q)=>new Promise(res=>c.toBlob(res,type,q));
+function imageFileSupported(file){
+  const type=String(file?.type||'').toLowerCase();
+  if(/^image\/(jpeg|jpg|png|webp)$/.test(type))return true;
+  const name=String(file?.name||'').toLowerCase();
+  return /\.(jpe?g|png|webp)$/.test(name);
+}
+async function loadBitmap(file){
+  if(!file)throw new Error('No image file was selected.');
+  try{
+    const bmp=await createImageBitmap(file);
+    return bmp;
+  }catch(e){}
+  const url=URL.createObjectURL(file);
+  try{
+    return await new Promise((res,rej)=>{
+      const i=new Image();
+      i.onload=()=>{URL.revokeObjectURL(url);res(i)};
+      i.onerror=()=>{URL.revokeObjectURL(url);rej(new Error('This image format could not be decoded by your browser. Please use JPG, PNG, or WEBP.'))};
+      i.src=url;
+    });
+  }catch(e){throw e}
+}
+async function processImage(file){
+  if(!imageFileSupported(file))throw new Error('Please choose a JPG, PNG, or WEBP image.');
+  const bmp=await loadBitmap(file);
+  const w0=bmp.width||bmp.naturalWidth,h0=bmp.height||bmp.naturalHeight;
+  if(!w0||!h0)throw new Error('The selected image has no readable dimensions.');
+  const draw=(max,q)=>{const s=Math.min(1,max/Math.max(w0,h0));const c=document.createElement('canvas');c.width=Math.max(1,Math.round(w0*s));c.height=Math.max(1,Math.round(h0*s));
+    const g=c.getContext('2d');if(!g)throw new Error('Your browser could not create an image canvas.');g.fillStyle='#fff';g.fillRect(0,0,c.width,c.height);g.drawImage(bmp,0,0,c.width,c.height);return c};
+  let max=1600,q=.78,blob=null,big=null;
+  for(let i=0;i<6;i++){
+    big=draw(max,q);blob=await canvasBlob(big,'image/jpeg',q);
+    if(blob&&blob.size<=850*1024)break;
+    if(i===1)q=.68;else if(i===2)q=.58;else if(i>=3){max=Math.max(1000,Math.round(max*.82));q=Math.max(.52,q-.03)}
+  }
+  if(!blob)throw new Error('Your browser could not convert the image. Try a JPG or PNG.');
+  if(blob.size>950*1024)throw new Error('That photo is still too large after compression. Please choose a smaller image.');
+  const small=draw(220,.72);
+  return{blob,dataUrl:await readAsDataURL(blob),thumb:small.toDataURL('image/jpeg',.72),width:big.width,height:big.height};
+}
+async function storeImage(file,kind,extra={}){
+  let p;
+  try{
+    p=await processImage(file);
+  }catch(err){
+    /* Keep upload functionality working even when a browser cannot draw/convert
+       a particular supported image. Store the original file/data instead. */
+    if(!imageFileSupported(file))throw err;
+    const dataUrl=await readAsDataURL(file);
+    let thumb=dataUrl;
+    try{
+      const bmp=await loadBitmap(file);
+      const w0=bmp.width||bmp.naturalWidth,h0=bmp.height||bmp.naturalHeight;
+      const s=Math.min(1,220/Math.max(w0,h0));
+      const c=document.createElement('canvas');c.width=Math.max(1,Math.round(w0*s));c.height=Math.max(1,Math.round(h0*s));
+      const g=c.getContext('2d');if(g){g.drawImage(bmp,0,0,c.width,c.height);thumb=c.toDataURL('image/jpeg',.72)}
+    }catch(_){}
+    p={blob:file,dataUrl,thumb,width:file.width||0,height:file.height||0};
+  }
+  const type=String(file.type||'image/jpeg').toLowerCase();
+  const meta={id:uid('img'),kind,name:file.name||'image.jpg',type,size:file.size||p.blob.size||0,thumb:p.thumb,createdAt:new Date().toISOString(),extractedText:'',ocr:null,...extra};
+  S.files[meta.id]=meta;await P.file(meta,p.dataUrl);
+  return{meta,blob:p.blob,dataUrl:p.dataUrl,file};
+}
+async function storeAttachment(file){
+  if(file.type.startsWith('image/')&&/jpe?g|png|webp/.test(file.type)){return(await storeImage(file,'attachment')).meta}
+  if(file.size>5*1024*1024)throw new Error(`${file.name} is larger than 5 MB.`);
+  const data=await readAsDataURL(file);
+  const meta={id:uid('file'),kind:'attachment',name:file.name,type:file.type||'application/octet-stream',size:file.size,thumb:'',createdAt:new Date().toISOString(),extractedText:'',ocr:null};
+  S.files[meta.id]=meta;await P.file(meta,data);return meta;
+}
+
+/* =====================================================================
+   10. OPTIONAL CAPABILITIES (downloads, Claude reading images) — everything works without them
+   ===================================================================== */
+const Cap={_c:{},get(name){
+  if(this._c[name])return this._c[name];
+  this._c[name]=(async()=>{try{if(window.claude&&claude.use)return await claude.use(name)}catch(e){}return null})();
+  return this._c[name];
+},
+  async quick(name,ms=4000){return Promise.race([this.get(name),sleep(ms).then(()=>null)])}};
+
+function matchSubject(name){
+  if(!name)return'';const n=String(name).trim().toLowerCase();
+  for(const s of S.subjects){
+    if(s.name.toLowerCase()===n)return s.id;
+    const al=SUBJECT_ALIASES[s.id]||[];if(al.includes(n))return s.id;
+  }
+  for(const s of S.subjects){if(n.includes(s.name.toLowerCase())||s.name.toLowerCase().includes(n))return s.id}
+  return'';
+}
+async function readImageWithAI(blob){
+  const sample=await Cap.quick('sample');
+  if(!sample)throw{code:'unavailable'};
+  const lim=await sample.limits().catch(()=>null);
+  if(!lim||!lim.images)throw{code:'images_unavailable'};
+  const today=new Date();
+  const prompt=`You are helping a student turn a photo or screenshot of a school agenda, homework board, or textbook page into assignments.
+Today is ${WDL[today.getDay()]}, ${todayStr()}.
+Known subjects: ${S.subjects.map(s=>s.name).join(', ')}.
+Read the image carefully. For every separate homework item you can actually see, return one object. If something is not visible or unclear, use null instead of guessing. Resolve relative dates ("tomorrow", "Thursday") using today's date.
+Reply with only JSON in exactly this shape:
+{"rawText":"all text you could read","items":[{"subject":"one of the known subjects or null","title":"short title, e.g. Exercises 12-20","description":"details or null","dueDate":"YYYY-MM-DD or null","dueTime":"HH:MM (24h) or null","confidence":"high|medium|low"}]}`;
+  const out=await sample.json(prompt,{images:blob});
+  if(!out||typeof out!=='object')throw{code:'invalid_json'};
+  const items=(Array.isArray(out.items)?out.items:[]).slice(0,20).map(it=>({
+    subjectId:matchSubject(it.subject),title:String(it.title||'').slice(0,160),description:it.description?String(it.description).slice(0,600):'',
+    dueDate:parseYmd(it.dueDate)?it.dueDate:'',dueTime:/^\d{2}:\d{2}$/.test(it.dueTime||'')?it.dueTime:'',confidence:['high','medium','low'].includes(it.confidence)?it.confidence:'low'}));
+  return{rawText:String(out.rawText||'').slice(0,4000),items};
+}
+
+/* =====================================================================
+   11. UI STATE, ROUTER, RENDERING
+   ===================================================================== */
+const ui={route:{name:'dashboard',arg:''},routeStr:'dashboard',query:'',f:{quick:'all',subject:'',priority:'',difficulty:'',date:''},
+  cal:{y:new Date().getFullYear(),m:new Date().getMonth(),sel:todayStr()},bars:{},stat:{metric:'tasks',range:14},subTab:'all',notifOpen:false,saveState:'saved'};
+
+function parseRoute(p){const [name,arg]=String(p||'').replace(/^#?\/?/,'').split('/');
+  const ok=['dashboard','agenda','class','homework','calendar','subjects','subject','achievements','statistics','students','settings'];
+  return{name:ok.includes(name)?name:'dashboard',arg:arg||''}}
+function go(path){
+  try{location.hash='#/'+path}catch(e){}
+  if(ui.routeStr!==path){ui.routeStr=path;ui.route=parseRoute(path);ui.notifOpen=false;renderAll();window.scrollTo(0,0)}
+}
+window.addEventListener('hashchange',()=>{const p=location.hash.replace(/^#\/?/,'')||'dashboard';if(p!==ui.routeStr){ui.routeStr=p;ui.route=parseRoute(p);renderAll();window.scrollTo(0,0)}});
+
+function applyTheme(){
+  const t=S.settings.theme;
+  const r=t==='system'?(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark'):t;
+  document.documentElement.setAttribute('data-theme',r==='light'?'light':'dark');
+  try{localStorage.setItem('agenda-theme',t)}catch(e){}
+}
+
+const NAV=[['dashboard','Dashboard'],['agenda','Agenda'],['homework','Homework'],['calendar','Calendar']];
+/* Primary Agenda is the public class agenda; legacy #/class remains an alias. */
+const MORE_NAV=[['subjects','Subjects'],['achievements','Achievements'],['statistics','Statistics'],['settings','Settings'],['students','Students']];
+const navKey=()=>{if(ui.route.name==='subject')return'subjects';if(ui.route.name==='class'||ui.route.name==='agenda')return'agenda';return ui.route.name};
+
+function shell(){
+  $('#app').innerHTML=`
+  <div class="app">
+    <aside class="side">
+      <div class="brand"><i>✓</i>Agenda</div>
+      <nav class="nav" id="sidenav"></nav>
+      <div class="minilevel" id="minilevel"></div>
+    </aside>
+    <div class="main">
+      <header class="topbar">
+        <label class="search">${ico('search',18)}<input id="q" type="search" placeholder="Search tasks, subjects, chapters…" autocomplete="off" aria-label="Search your agenda"></label>
+        <span class="sp"></span>
+        <span id="saved" class="saved" role="status"><i></i><span></span></span>
+        <button class="iconbtn" data-act="bell" aria-label="Notifications">${ico('bell',19)}<b class="dot" id="beldot" hidden></b></button>
+        <button class="iconbtn" data-act="theme" aria-label="Toggle light or dark theme" id="themebtn"></button>
+        <button class="btn primary add-btn" data-act="add">${ico('plus',18)}Add homework</button>
+      </header>
+      <div id="banner"></div>
+      <main class="view" id="view"></main>
+    </div>
+  </div>
+  <nav class="bottomnav" id="bottomnav" aria-label="Main"></nav>
+  <button class="fab" data-act="add" aria-label="Add homework">${ico('plus',26)}</button>`;
+  $('#q').addEventListener('input',e=>{ui.query=e.target.value;if(ui.route.name==='agenda'||ui.route.name==='class')renderView();else if(ui.route.name!=='homework')go('homework');else renderView()});
+}
+
+function updateChrome(){
+  if(!$('#sidenav'))return;
+  const over=S.homework.filter(h=>statusOf(h)==='overdue').length,k=navKey();
+  $('#sidenav').innerHTML=NAV.map(([id,l])=>`<a href="#/${id}" data-go="${id}" class="${k===id?'on':''}">${ico(id==='statistics'?'stats':id,20)}${l}${id==='homework'&&over?`<span class="badge">${over}</span>`:''}</a>`).join('')+
+    `<button data-act="more" class="${MORE_NAV.some(([id])=>id===k)?'on':''}">${ico('more',20)}More</button>`;
+  const bn=[['dashboard','Home'],['agenda','Agenda'],['homework','Homework'],['calendar','Calendar']];
+  $('#bottomnav').innerHTML=bn.map(([id,l])=>`<a href="#/${id}" data-go="${id}" class="${k===id?'on':''}">${ico(id==='statistics'?'stats':id,22)}${l}${id==='homework'&&over?`<span class="badge">${over}</span>`:''}</a>`).join('')+
+    `<button data-act="more" class="${MORE_NAV.some(([id])=>id===k)?'on':''}">${ico('more',22)}More</button>`;
+  const li=levelInfo(S.student.totalXP);
+  $('#minilevel').innerHTML=`<b>Level ${li.level}</b><small>${fmtNum(li.into)} / ${fmtNum(li.span)} XP</small><div class="bar sm"><i style="width:${li.pct}%"></i></div>`;
+  const unread=S.notifs.filter(n=>!n.read).length;const bd=$('#beldot');bd.hidden=!unread;bd.textContent=unread>9?'9+':unread;
+  $('#themebtn').innerHTML=ico(document.documentElement.getAttribute('data-theme')==='light'?'moon':'sun',19);
+  setSaveState(ui.saveState);
+}
+function setSaveState(s,err){
+  ui.saveState=s;const el=$('#saved');if(!el)return;
+  el.className='saved '+s;
+  el.querySelector('span').textContent={saved:'Saved',saving:'Saving…',error:'Not saved',unsaved:'Not saved (memory only)'}[s]||'';
+}
+Data.onStatus=(s,e)=>setSaveState(s,e);
+
+function renderAll(){
+  if(!$('#view'))return;
+  updateChrome();renderView();
+}
+function renderView(){
+  const v=$('#view');
+  try{
+    const r=ui.route;
+    v.innerHTML=({dashboard:viewDashboard,agenda:viewClass,class:viewClass,homework:viewHomework,calendar:viewCalendar,subjects:viewSubjects,subject:viewSubject,achievements:viewAchievements,statistics:viewStats,students:viewStudents,settings:viewSettings}[r.name]||viewDashboard)();
+    if(r.name==='students'&&!S.student.isAdmin)go('dashboard');
+  }catch(e){console.error(e);v.innerHTML=`<div class="empty"><h3>Something went wrong showing this page</h3><p>Your data is safe. Try another page or reload.</p></div>`}
+  const bn=$('#banner');
+  const cloudBanner=(SUPABASE_CONFIGURED&&SUPABASE_AUTH_LAST_ERROR)?`<div class="errbanner"><b>Shared cloud connection problem.</b> ${esc(SUPABASE_AUTH_LAST_ERROR)} <button class="btn sm" data-act="cloudretry" style="margin-left:8px">Retry</button></div>`:'';
+  bn.innerHTML=cloudBanner+(S.memoryOnly?`<div class="errbanner"><b>Saving isn\u2019t available here.</b> This browser blocked local storage, so changes will be lost when you close the page. Use Settings → Export to keep a copy.</div>`:'')+
+    (S.issues?`<div class="errbanner">${S.issues} saved record${S.issues>1?'s':''} couldn\u2019t be read and ${S.issues>1?'were':'was'} skipped. Everything else is intact.</div>`:'');
+  animateBars();
+}
+function animateBars(){
+  const els=$$('[data-anim]');
+  const apply=(el,p)=>{if(el.classList.contains('ring-fill')){const c=+el.dataset.c;el.style.strokeDashoffset=c*(1-p/100)}else el.style.width=p+'%'};
+  els.forEach(el=>{const k=el.dataset.anim;const from=k in ui.bars?ui.bars[k]:0;const t=el.style.transition;el.style.transition='none';apply(el,from);el._t=t});
+  void document.body.offsetWidth;
+  requestAnimationFrame(()=>els.forEach(el=>{el.style.transition='';const p=+el.dataset.pct;apply(el,p);ui.bars[el.dataset.anim]=p}));
+}
+
+/* ----- shared pieces ----- */
+function ring(pct,{size=132,stroke=11,key,inner,cls=''}){
+  const r=(size-stroke)/2,c=2*Math.PI*r;
+  return`<div class="ring ${cls}" style="width:${size}px;height:${size}px"><svg viewBox="0 0 ${size} ${size}"><circle class="ring-bg" cx="${size/2}" cy="${size/2}" r="${r}" stroke-width="${stroke}"/><circle class="ring-fill" data-anim="${key}" data-pct="${pct}" data-c="${c}" cx="${size/2}" cy="${size/2}" r="${r}" stroke-width="${stroke}" stroke-dasharray="${c}" stroke-dashoffset="${c}"/></svg><div class="ring-in">${inner}</div></div>`;
+}
+const bar=(pct,{key,cls='',ac=''}={})=>`<div class="bar ${cls}" ${ac?`style="--ac:${ac}"`:''}><i ${key?`data-anim="${key}" data-pct="${pct}" style="width:0"`:`style="width:${pct}%"`}></i></div>`;
+const tile=(s,cls='')=>`<span class="tile ${cls}" style="--ac:${esc(s.accent)}">${esc(s.icon)}</span>`;
+
+function hwCard(h){
+  const s=subj(h.subjectId),st=statusOf(h);
+  const dueCls=st==='overdue'?'bad':(h.dueDate===todayStr()?'acc':'');
+  const xpTxt=h.completed&&h.xpAwarded?`<span class="xpchip done">+${h.xp} XP earned</span>`:(h.xpAwarded?`<span class="xpchip done">XP already earned</span>`:`<span class="xpchip">+${h.xp} XP</span>`);
+  const nAtt=h.attachments.length+(h.sourceImageId?1:0);
+  return`<article class="hw ${st}" data-id="${esc(h.id)}">
+    <button class="check" data-act="toggle" data-id="${esc(h.id)}" aria-pressed="${h.completed}" aria-label="${h.completed?'Mark as not done':'Mark as done'}: ${esc(h.title)}">${CHECK_SVG}</button>
+    <div class="hw-main" data-act="edit" data-id="${esc(h.id)}">
+      <div class="hw-top">${tile(s,'sm')}<span>${esc(s.name)}</span>${h.type!=='homework'?`<span class="pill acc">${TYPES[h.type]}</span>`:''}</div>
+      <h3 class="hw-title">${esc(h.title)}</h3>
+      ${h.description?`<p class="hw-desc">${esc(h.description)}</p>`:''}
+      <div class="hw-meta">
+        <span class="pill ${dueCls}">${ico('calendar',13)}${st==='overdue'?'Overdue · ':''}${esc(dueLabel(h))}${h.dueTime?' · '+fmtTime(h.dueTime):''}</span>
+        <span class="pill ${h.priority==='high'?'hi':h.priority==='low'?'lo':''}">${PRIO[h.priority].label} priority</span>
+        <span class="pill">${DIFF[h.difficulty].label}</span>
+        ${st==='completed'?`<span class="pill ok">Done</span>`:''}
+        ${nAtt?`<span class="pill">${ico('clip',13)}${nAtt}</span>`:''}
+      </div>
+    </div>
+    <div class="hw-side">${xpTxt}<div class="acts"><button class="iconbtn sm" data-act="edit" data-id="${esc(h.id)}" aria-label="Edit">${ico('edit',16)}</button><button class="iconbtn sm" data-act="del" data-id="${esc(h.id)}" aria-label="Delete">${ico('trash',16)}</button></div></div>
+  </article>`;
+}
+const hwList=(items,empty)=>items.length?`<div class="hwlist">${items.map(hwCard).join('')}</div>`:`<div class="empty"><p>${empty}</p></div>`;
+const addButtons=`<div class="row"><button class="btn primary" data-act="add">${ico('plus',18)}Add homework</button><button class="btn" data-act="upload">${ico('image',18)}Upload agenda photo</button></div>`;
+
+/* ----- Dashboard ----- */
+function viewDashboard(){
+  const today=todayStr(),li=levelInfo(S.student.totalXP),stk=getStreak();
+  const tl=S.homework.filter(h=>h.dueDate===today).sort(cmp);
+  const done=tl.filter(h=>h.completed).length,pct=tl.length?Math.round(done/tl.length*100):0,left=tl.length-done;
+  const over=S.homework.filter(h=>statusOf(h)==='overdue').sort(cmp);
+  const up=S.homework.filter(h=>!h.completed&&h.dueDate>today).sort(cmp).slice(0,6);
+  const active=S.homework.filter(h=>!h.completed).length;
+  const hr=new Date().getHours(),greet=hr<5?'Good evening':hr<12?'Good morning':hr<18?'Good afternoon':'Good evening';
+  const sub=!S.homework.length?'Add your first task to get started.':tl.length?(left?`${left} item${left>1?'s':''} left for today.`:'Everything due today is done.'):'Nothing is due today.';
+  const heat=streakHistory();
+  return`
+  <div class="card hero">
+    <div>
+      <p class="hello"><b>${greet}${S.student.name?', '+esc(S.student.name):''}</b>${sub} ${active?`${active} active in total.`:''}</p>
+      <div class="levelrow">
+        ${ring(li.pct,{size:128,key:'xpring',inner:`<small>Level</small><b>${li.level}</b>`})}
+        <div style="min-width:0;flex:1">
+          <div class="xpnum">${fmtNum(S.student.totalXP-li.floor)} <small>/ ${fmtNum(li.span)} XP</small></div>
+          <div style="margin:10px 0 8px">${bar(li.pct,{key:'xpbar'})}</div>
+          <p class="muted" style="font-size:13.5px">${fmtNum(li.remaining)} XP to level ${li.level+1} · ${fmtNum(S.student.totalXP)} XP total</p>
+        </div>
+      </div>
+    </div>
+    <div style="display:grid;place-items:center;text-align:center;gap:8px">
+      ${ring(pct,{size:112,stroke:10,key:'today',cls:'today',inner:`<b style="font-size:28px">${pct}%</b>`})}
+      <p class="muted" style="font-size:13.5px">Today's progress<br>${done} of ${tl.length} done</p>
+    </div>
+    <div>
+      <div class="streakbig"><span>🔥</span>${stk.current} day${stk.current===1?'':'s'}</div>
+      <p class="muted" style="font-size:13.5px;margin-top:2px">${stk.current?(stk.doneToday?'Streak kept for today.':'Finish one assignment today to keep it.'):'Complete an assignment to start a streak.'} Best: ${stk.best}.</p>
+      <div class="heat" role="img" aria-label="Streak history for the last five weeks">${heat.map(c=>`<i class="${c.on?'on':''} ${c.today?'today':''} ${c.fut?'fut':''}" title="${fmtDate(c.d,true)}${c.on?' – completed homework':''}"></i>`).join('')}</div>
+      <div class="heatlabels">${['M','T','W','T','F','S','S'].map(x=>`<span>${x}</span>`).join('')}</div>
+    </div>
+  </div>
+  ${!S.homework.length?`<div class="empty" style="margin-top:16px"><h3>Your agenda is empty</h3><p>Type an assignment or upload a photo of your school agenda.</p>${addButtons}</div>`:`
+  <div class="grid cols-2" style="margin-top:16px">
+    <div class="stack">
+      ${over.length?`<section class="card"><h2>Overdue <span class="count">${over.length}</span></h2>${hwList(over,'')}</section>`:''}
+      <section class="card"><h2>Today <span class="count">${tl.length}</span></h2>${hwList(tl,'Nothing due today. Enjoy it, or get ahead on something below.')}</section>
+    </div>
+    <div class="stack">
+      <section class="card"><h2>Coming up</h2>${hwList(up,'Nothing scheduled after today.')}</section>
+      <section class="card"><h2>Add more</h2><div class="stack"><p class="muted">Type it in, or snap your agenda and check what we read.</p>${addButtons}</div></section>
+    </div>
+  </div>`}`;
+}
+
+/* ----- Agenda ----- */
+function groupFor(h){
+  const t=todayStr();
+  if(h.dueDate<t)return h.completed?'Earlier':'Overdue';
+  if(h.dueDate===t)return'Today';if(h.dueDate===addDays(t,1))return'Tomorrow';
+  const we=addDays(weekStart(t),6);
+  if(h.dueDate<=we)return'This week';if(h.dueDate<=addDays(we,7))return'Next week';return'Later';
+}
+function viewAgenda(){
+  const order=['Overdue','Today','Tomorrow','This week','Next week','Later','Earlier'];
+  const showDone=S.settings.showCompleted;
+  const items=S.homework.filter(h=>showDone||!h.completed).sort(cmp);
+  const groups=Object.fromEntries(order.map(o=>[o,[]]));items.forEach(h=>groups[groupFor(h)].push(h));
+  const parts=order.filter(o=>groups[o].length).map(o=>{
+    const g=groups[o];const d=g.filter(h=>h.completed).length;
+    return`<section class="card" style="margin-bottom:14px"><h2>${o} <span class="count">${g.length}</span>${o==='Overdue'?'<span class="pill bad">Needs attention</span>':''}${d?`<span class="muted" style="font-size:13px;font-weight:500;margin-left:auto">${d} done</span>`:''}</h2>${hwList(g,'')}</section>`}).join('');
+  return`<div class="page-h"><div><h1>Agenda</h1><p>Your schedule, tasks and deadlines in one place.</p></div>
+    <label class="row" style="gap:10px"><span class="muted">Show completed</span><span class="switch"><input type="checkbox" data-set="showCompleted" ${showDone?'checked':''}><span></span></span></label></div>
+    ${parts||`<div class="empty"><h3>Nothing on your agenda</h3><p>Add a task, homework, test or project to see it laid out by date.</p>${addButtons}</div>`}`;
+}
+
+/* ----- Homework (search + filters) ----- */
+function filterHW(){
+  const f=ui.f,t=todayStr(),q=ui.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  return S.homework.filter(h=>{
+    const st=statusOf(h),s=subj(h.subjectId);
+    if(f.quick==='today'&&h.dueDate!==t)return false;
+    if(f.quick==='active'&&h.completed)return false;
+    if(f.quick==='completed'&&!h.completed)return false;
+    if(f.quick==='overdue'&&st!=='overdue')return false;
+    if(f.subject&&h.subjectId!==f.subject)return false;
+    if(f.priority&&h.priority!==f.priority)return false;
+    if(f.difficulty&&h.difficulty!==f.difficulty)return false;
+    if(f.date&&h.dueDate!==f.date)return false;
+    if(q.length){const hay=[h.title,h.description,h.notes,s.name,TYPES[h.type],h.dueDate,fmtDate(h.dueDate)].join(' ').toLowerCase();if(!q.every(w=>hay.includes(w)))return false}
+    return true;
+  }).sort((a,b)=>(a.completed-b.completed)||(a.completed?String(b.completedAt).localeCompare(String(a.completedAt)):cmp(a,b)));
+}
+function viewHomework(){
+  const f=ui.f;
+  const quick=[['all','All'],['today','Today'],['active','Active'],['completed','Completed'],['overdue','Overdue']];
+  const dirty=f.subject||f.priority||f.difficulty||f.date||ui.query;
+  return`<div class="page-h"><div><h1>Homework</h1><p>Check things off, earn XP.</p></div><button class="btn primary add-btn" data-act="add" style="display:inline-flex!important">${ico('plus',18)}Add homework</button></div>
+  <div class="chips">${quick.map(([k,l])=>`<button class="chip ${f.quick===k?'on':''}" data-act="qf" data-k="${k}">${l}</button>`).join('')}</div>
+  <div class="filters">
+    <select class="sel" data-filter="subject" aria-label="Subject"><option value="">All subjects</option>${S.subjects.map(s=>`<option value="${esc(s.id)}" ${f.subject===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select>
+    <select class="sel" data-filter="priority" aria-label="Priority"><option value="">Any priority</option>${Object.entries(PRIO).map(([k,v])=>`<option value="${k}" ${f.priority===k?'selected':''}>${v.label} priority</option>`).join('')}</select>
+    <select class="sel" data-filter="difficulty" aria-label="Difficulty"><option value="">Any difficulty</option>${Object.entries(DIFF).map(([k,v])=>`<option value="${k}" ${f.difficulty===k?'selected':''}>${v.label}</option>`).join('')}</select>
+    <input class="inp" type="date" data-filter="date" value="${esc(f.date)}" aria-label="Due date">
+    ${dirty?`<button class="btn ghost sm" data-act="clearf">${ico('x',14)}Clear filters</button>`:''}
+  </div>
+  ${ui.query?`<p class="muted" style="margin-bottom:10px">Searching for <b style="color:var(--text)">${esc(ui.query)}</b></p>`:''}
+  <div id="hwlist">${hwResults()}</div>`;
+}
+function hwResults(){
+  const r=filterHW();
+  return`<p class="muted" style="margin-bottom:10px">${r.length} assignment${r.length===1?'':'s'}</p>`+
+    (r.length?`<div class="hwlist">${r.map(hwCard).join('')}</div>`:`<div class="empty"><h3>${S.homework.length?'No matches':'No homework yet'}</h3><p>${S.homework.length?'Try a different search or clear the filters.':'Add your first assignment to see it here.'}</p>${S.homework.length?'':addButtons}</div>`);
+}
+
+/* ----- Calendar ----- */
+function viewCalendar(){
+  const {y,m,sel}=ui.cal;const first=new Date(y,m,1),lead=(first.getDay()+6)%7,dim=new Date(y,m+1,0).getDate(),t=todayStr();
+  const by={};S.homework.forEach(h=>(by[h.dueDate]=by[h.dueDate]||[]).push(h));
+  const cells=[];for(let i=0;i<lead;i++)cells.push(addDays(ymd(first),i-lead));
+  for(let d=1;d<=dim;d++)cells.push(`${y}-${pad(m+1)}-${pad(d)}`);
+  while(cells.length%7)cells.push(addDays(cells[cells.length-1],1));
+  const cell=d=>{const l=by[d]||[];const p=l.filter(h=>statusOf(h)==='pending').length,c=l.filter(h=>h.completed).length,o=l.filter(h=>statusOf(h)==='overdue').length;
+    const out=!d.startsWith(`${y}-${pad(m+1)}`);
+    return`<button class="day ${out?'out':''} ${d===t?'today':''} ${d===sel?'sel':''}" data-act="calsel" data-d="${d}" aria-label="${fmtDate(d,true)}, ${l.length} assignments"><span class="n">${+d.slice(8)}</span><span class="dots">${p?`<i>${p}</i>`:''}${c?`<i class="ok">${c}</i>`:''}${o?`<i class="bad">${o}</i>`:''}</span></button>`};
+  const selList=(by[sel]||[]).sort(cmp);
+  return`<div class="page-h"><div><h1>Calendar</h1><p>Tap a day to see what's due.</p></div>
+    <div class="row"><button class="iconbtn" data-act="calprev" aria-label="Previous month">${ico('left',18)}</button><b style="min-width:150px;text-align:center;font-family:var(--font-d);font-size:19px">${MONL[m]} ${y}</b><button class="iconbtn" data-act="calnext" aria-label="Next month">${ico('right',18)}</button><button class="btn sm" data-act="caltoday">Today</button></div></div>
+  <div class="grid cols-2" style="grid-template-columns:minmax(0,1.6fr) minmax(0,1fr)">
+    <div class="card"><div class="cal">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(x=>`<div class="dow">${x}</div>`).join('')}${cells.map(cell).join('')}</div>
+      <div class="legend" style="margin-top:14px"><span>Pending</span><span class="ok">Completed</span><span class="bad">Overdue</span></div></div>
+    <div class="card"><h2>${fmtDate(sel,true)}${sel===t?' <span class="pill acc">Today</span>':''}</h2>
+      ${hwList(selList,'Nothing due on this day.')}
+      <button class="btn" style="margin-top:12px;width:100%" data-act="add" data-date="${sel}">${ico('plus',16)}Add for this day</button></div>
+  </div>`;
+}
+
+/* ----- Subjects ----- */
+function subStats(id){const l=S.homework.filter(h=>h.subjectId===id);const c=l.filter(h=>h.completed).length;return{total:l.length,done:c,pct:l.length?Math.round(c/l.length*100):0}}
+function viewSubjects(){
+  return`<div class="page-h"><div><h1>Subjects</h1><p>Progress in every class.</p></div><button class="btn primary" data-act="subnew">${ico('plus',18)}New subject</button></div>
+  <div class="subgrid">${S.subjects.map(s=>{const st=subStats(s.id);return`<button class="subcard" style="--ac:${esc(s.accent)}" data-go="subject/${esc(s.id)}" data-act="gosub" data-id="${esc(s.id)}">
+    <div class="row">${tile(s)}<b>${esc(s.name)}</b></div>${bar(st.pct,{key:'sub-'+s.id,cls:'sub sm',ac:s.accent})}
+    <div class="nums"><span>${st.total} assignment${st.total===1?'':'s'}</span><span>${st.done} done · ${st.pct}%</span></div></button>`}).join('')}</div>`;
+}
+function viewSubject(){
+  const s=S.subjects.find(x=>x.id===ui.route.arg);
+  if(!s)return`<div class="empty"><h3>Subject not found</h3><button class="btn" data-go="subjects" data-act="gosubs">Back to subjects</button></div>`;
+  const st=subStats(s.id);let l=S.homework.filter(h=>h.subjectId===s.id);
+  const tab=ui.subTab;if(tab==='active')l=l.filter(h=>!h.completed);if(tab==='completed')l=l.filter(h=>h.completed);
+  l.sort((a,b)=>(a.completed-b.completed)||cmp(a,b));
+  return`<div class="page-h"><div><button class="btn ghost sm" data-act="gosubs" style="margin-left:-10px">${ico('left',16)}Subjects</button>
+    <div class="subhead" style="--ac:${esc(s.accent)}">${tile(s,'lg')}<div><h1>${esc(s.name)}</h1>
+    <div class="stats3"><span><b>${st.total}</b>Assignments</span><span><b>${st.done}</b>Completed</span><span><b>${st.pct}%</b>Completion</span></div></div></div></div>
+    <div class="row"><button class="btn" data-act="subedit" data-id="${esc(s.id)}">${ico('edit',16)}Edit</button><button class="btn primary" data-act="add" data-sub="${esc(s.id)}">${ico('plus',16)}Add homework</button></div></div>
+  <div style="margin-bottom:16px">${bar(st.pct,{key:'subhead-'+s.id,cls:'sub',ac:s.accent})}</div>
+  <div class="chips" style="margin-bottom:14px">${[['all','All'],['active','Active'],['completed','Completed']].map(([k,n])=>`<button class="chip ${tab===k?'on':''}" data-act="subtab" data-k="${k}">${n}</button>`).join('')}</div>
+  ${hwList(l,`No ${tab==='all'?'':tab+' '}${esc(s.name)} assignments yet.`)}`;
+}
+
+/* ----- Achievements ----- */
+function viewAchievements(){
+  const recs=ACH.map(d=>({d,r:S.ach[d.id]||{progress:Math.min(d.goal,Math.floor(d.val())),unlocked:false}}));
+  const un=recs.filter(x=>x.r.unlocked).length;
+  const card=({d,r})=>`<div class="ach ${r.unlocked?'unlocked':'locked'}"><div class="ic">${d.icon}</div><div><b>${d.name}</b><p class="muted" style="font-size:14px">${d.desc}</p></div>
+    ${r.unlocked?`<span class="pill xp">Unlocked ${fmtDate(localDate(r.unlockedAt))}</span>`:`<div>${bar(Math.round(r.progress/d.goal*100),{cls:'sm'})}<p class="hint" style="margin-top:5px">${fmtNum(r.progress)} / ${fmtNum(d.goal)}</p></div>`}</div>`;
+  return`<div class="page-h"><div><h1>Achievements</h1><p>${un} of ${ACH.length} unlocked.</p></div></div>
+  <h2 style="font-size:18px;margin:6px 0 12px">Unlocked</h2>${un?`<div class="achgrid">${recs.filter(x=>x.r.unlocked).map(card).join('')}</div>`:`<div class="empty"><p>Complete your first assignment to unlock one.</p></div>`}
+  <h2 style="font-size:18px;margin:26px 0 12px">Locked</h2><div class="achgrid">${recs.filter(x=>!x.r.unlocked).map(card).join('')||'<p class="muted">You have them all.</p>'}</div>`;
+}
+
+/* ----- Statistics ----- */
+function viewStats(){
+  const T=S.student,li=levelInfo(T.totalXP),stk=getStreak(),t=todayStr(),ws=weekStart(t),mo=t.slice(0,7);
+  const done=S.homework.filter(h=>h.completed);
+  const dOf=h=>localDate(h.completedAt);
+  const wk=done.filter(h=>dOf(h)>=ws).length,mn=done.filter(h=>dOf(h).startsWith(mo)).length;
+  const xpWk=S.xpLog.filter(e=>e.date>=ws).reduce((a,e)=>a+e.amount,0),xpMn=S.xpLog.filter(e=>e.date.startsWith(mo)).reduce((a,e)=>a+e.amount,0);
+  const overall=S.homework.length?Math.round(done.length/S.homework.length*100):0;
+  const kpi=[[done.length,'Homework completed'],[fmtNum(T.totalXP),'Total XP'],[li.level,'Current level'],[stk.current,'Day streak'],[overall+'%','Overall completion'],[wk,'Completed this week'],[mn,'Completed this month'],[fmtNum(xpWk),'XP this week'],[fmtNum(xpMn),'XP this month']];
+  const {metric,range}=ui.stat;
+  const days=[];for(let i=range-1;i>=0;i--)days.push(addDays(t,-i));
+  const xpByDay=dailyXP();
+  const vals=days.map(d=>metric==='tasks'?done.filter(h=>dOf(h)===d).length:(xpByDay[d]||0));
+  const mx=Math.max(1,...vals);
+  const xs=new Map();S.xpLog.forEach(e=>{const k=e.subjectId||e.subjectName;const cur=xs.get(k)||{name:subj(e.subjectId).id?subj(e.subjectId).name:(e.subjectName||'Unknown'),accent:subj(e.subjectId).accent,xp:0};cur.xp+=e.amount;xs.set(k,cur)});
+  const xl=[...xs.values()].sort((a,b)=>b.xp-a.xp),xmax=Math.max(1,...xl.map(x=>x.xp));
+  const cs=S.subjects.map(s=>({s,...subStats(s.id)})).filter(x=>x.total).sort((a,b)=>b.pct-a.pct);
+  return`<div class="page-h"><div><h1>Statistics</h1><p>How you're doing over time.</p></div></div>
+  <div class="kpis">${kpi.map(([v,l])=>`<div class="kpi"><b>${v}</b><span>${l}</span></div>`).join('')}</div>
+  <section class="card" style="margin-top:16px"><div class="row between wrap" style="margin-bottom:6px"><h2 style="margin:0">Productivity</h2>
+    <div class="row wrap"><div class="seg">${[['tasks','Assignments'],['xp','XP']].map(([k,l])=>`<button class="${metric===k?'on':''}" data-act="statm" data-k="${k}">${l}</button>`).join('')}</div>
+    <div class="seg">${[7,14,30].map(n=>`<button class="${range===n?'on':''}" data-act="statr" data-k="${n}">${n}d</button>`).join('')}</div></div></div>
+    <div class="vbars" role="img" aria-label="${metric==='tasks'?'Assignments completed':'XP earned'} per day">${days.map((d,i)=>`<div class="vb ${metric==='xp'?'xpm':''}">${vals[i]?`<em>${vals[i]}</em>`:''}<div class="col" style="height:${Math.round(vals[i]/mx*100*.78)}%"></div><small>${range<=14?WD[parseYmd(d).getDay()].slice(0,2):(i%5===0?+d.slice(8):'')}</small></div>`).join('')}</div></section>
+  <div class="grid cols-2" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr));margin-top:16px">
+    <section class="card"><h2>XP by subject</h2>${xl.length?`<div class="hbars">${xl.map(x=>`<div class="hb"><span>${esc(x.name)}</span>${bar(Math.round(x.xp/xmax*100),{cls:'sub sm',ac:x.accent})}<span>${fmtNum(x.xp)}</span></div>`).join('')}</div>`:'<p class="muted">Complete an assignment to see XP by subject.</p>'}</section>
+    <section class="card"><h2>Completion by subject</h2>${cs.length?`<div class="hbars">${cs.map(x=>`<div class="hb"><span>${esc(x.s.name)}</span>${bar(x.pct,{cls:'sub sm',ac:x.s.accent})}<span>${x.pct}%</span></div>`).join('')}</div>`:'<p class="muted">Add homework to see completion by subject.</p>'}</section>
+  </div>`;
+}
+
+/* ----- Admin student directory ----- */
+function viewStudents(){
+  if(!S.student.isAdmin){return`<div class="empty"><h3>Admin access required</h3><p>This page is only available to admin profiles.</p></div>`}
+  const q=String(ui.peopleQuery||'').trim().toLowerCase();
+  let people=Class.people||[];
+  if(q)people=people.filter(p=>[p.name,p.className].join(' ').toLowerCase().includes(q));
+  const classes=[...new Set((Class.people||[]).map(p=>String(p.className||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  const admins=(Class.people||[]).filter(p=>p.isAdmin).length;
+  return`<div class="page-h"><div><h1>Students</h1><p>Everyone who has registered in the shared class system.</p></div><div class="row"><span class="pill acc">${(Class.people||[]).length} students</span><span class="pill xp">${admins} admins</span></div></div>
+  ${Class.peopleStatus==='loading'?`<div class="empty"><p>Loading registered students…</p></div>`:
+    Class.peopleStatus==='error'?`<div class="empty"><h3>Couldn’t load students</h3><p>Check the shared database connection and reload.</p></div>`:
+    Class.peopleStatus==='off'?`<div class="empty"><h3>Shared student list unavailable</h3><p>The student directory needs the shared database capability.</p></div>`:`
+      <section class="card" style="margin-bottom:16px"><div class="row wrap between"><label class="search" style="max-width:420px">${ico('search',18)}<input id="peopleq" type="search" placeholder="Search students or classes…" autocomplete="off" value="${esc(ui.peopleQuery||'')}"></label><span class="muted">${people.length} shown · ${classes.length} class${classes.length===1?'':'es'}</span></div></section>
+      ${people.length?`<section class="card"><div class="stack">${people.map((p,i)=>`<div class="set-row" style="display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;border-top:${i?'1px solid var(--line)':'0'};padding:12px 0"><span class="tile sm" style="--ac:${p.isAdmin?'var(--xp)':'var(--accent)'}">${p.isAdmin?'★':esc((p.name||'?').trim().slice(0,1).toUpperCase())}</span><div><b>${esc(p.name)}</b><small>${esc(p.className||'No class')} · ${p.isAdmin?'Admin':'Student'}</small></div><span class="pill ${p.isAdmin?'xp':'acc'}">${p.isAdmin?'Admin':'Student'}</span></div>`).join('')}</div></section>`:
+      `<div class="empty"><h3>No students found</h3><p>Try a different name or class.</p></div>`}`}`;
+}
+
+/* ----- Settings ----- */
+function sw(path,label,desc='',checked){return`<div class="set-row"><div>${label}${desc?`<small>${desc}</small>`:''}</div><label class="switch"><input type="checkbox" data-set="${path}" ${checked?'checked':''} aria-label="${esc(label)}"><span></span></label></div>`}
+function viewSettings(){
+  const n=S.settings.notify;
+  return`<div class="page-h"><div><h1>Settings</h1><p>Changes save automatically.</p></div></div>
+  <div class="grid" style="max-width:760px">
+   <section class="card"><h2>Profile</h2><div class="fgrid"><label class="field"><span>What should we call you?</span><input class="inp" id="nameinp" maxlength="40" value="${esc(S.student.name)}" placeholder="Your name"></label><label class="field"><span>Class</span><select class="sel" id="classinp">${ALLOWED_CLASSES.map(c=>`<option value="${c}" ${S.student.className===c?'selected':''}>${c}</option>`).join('')}</select></label><div class="full"><span class="hint">${S.student.isAdmin?'Admin mode is enabled for this profile.':'Student mode'}</span></div></div></section>
+   ${(!S.student.isAdmin&&SUPABASE_CONFIGURED)?`<section class="card"><h2>Admin access</h2><p class="hint">This registers your current Supabase account and verifies admin access in one step.</p><div class="row wrap" style="align-items:end"><label class="field" style="flex:1;min-width:220px"><span>Admin code</span><input class="inp" id="adminclaimcode" inputmode="numeric" autocomplete="off" placeholder="Enter admin code"></label><button class="btn primary" data-act="claim-admin">Enable admin</button></div><p id="adminclaimerr" style="color:var(--bad);font-size:13px;margin-top:8px"></p></section>`:''}
+   <section class="card"><h2>Appearance</h2><div class="seg">${[['dark','Dark'],['light','Light'],['system','System']].map(([k,l])=>`<button class="${S.settings.theme===k?'on':''}" data-act="theme-set" data-k="${k}">${l}</button>`).join('')}</div></section>
+   <section class="card"><h2>Notifications</h2>
+    ${sw('notify.dueToday','Due today','Reminder for each assignment due today',n.dueToday)}${sw('notify.dueTomorrow','Due tomorrow','A day-ahead heads-up',n.dueTomorrow)}${sw('notify.overdue','Overdue','When something slips past its due date',n.overdue)}
+    ${sw('notify.xp','XP earned','',n.xp)}${sw('notify.levelUp','Level up','',n.levelUp)}${sw('notify.achievement','Achievement unlocked','',n.achievement)}${sw('notify.streak','Streak maintained','',n.streak)}
+    ${'Notification' in window?sw('browserNotify','Browser notifications','Also show reminders as system notifications while the page is open',S.settings.browserNotify):''}</section>
+   <section class="card"><h2>Photos</h2>${sw('aiReading','Read agenda photos automatically','Uses Claude to suggest subject, task and date. You always review before anything is added.',S.settings.aiReading)}</section>
+   <section class="card"><h2>How XP works</h2><table class="xp"><tr><td>Easy</td><td>25 XP</td></tr><tr><td>Medium</td><td>50 XP</td></tr><tr><td>Hard</td><td>75 XP</td></tr><tr><td>Very hard</td><td>100 XP</td></tr>
+     <tr><td>Finish before the due date</td><td>+20%</td></tr><tr><td>Finish everything due in a day</td><td>+${BONUS.daily} XP</td></tr><tr><td>Streak of 2+ days (first assignment of the day)</td><td>+5 XP per day, up to 35</td></tr></table>
+     <p class="hint" style="margin-top:10px">Each assignment pays out once. Unticking and re-ticking never earns more.</p></section>
+   <section class="card"><h2>Data</h2><div class="stack">
+     <p class="muted" id="storageinfo">${S.homework.length} assignments · ${Object.keys(S.files).length} saved files. Stored on this device.</p>
+     <div class="row wrap"><button class="btn" data-act="export">${ico('download',16)}Export backup</button><button class="btn" data-act="import">${ico('upload',16)}Import backup</button><button class="btn danger" data-act="reset">${ico('trash',16)}Clear all data</button></div>
+     <p class="hint">Backups include homework, subjects, XP, level, streak, achievements, settings and uploaded images. Use one to move your agenda to another device.</p>
+     <p class="hint">Personal agenda data is kept on this device. Shared Class Agenda and student-directory data sync through Supabase when configured.</p>
+     <hr class="sep"><h3>Account session</h3><p class="hint">Sign out of the current anonymous Supabase session and return to profile setup. This does not delete your local homework or backup data.</p><button class="btn danger" data-act="logout">${ico('logout',16)}Log out</button></div></section>
+  </div>`;
+}
+
+/* =====================================================================
+   12. MODALS & FLOWS
+   ===================================================================== */
+const modals=[];
+function openModal(html,{cls='',onClose,locked=false}={}){
+  const ov=document.createElement('div');ov.className='overlay';ov.innerHTML=`<div class="modal ${cls}" role="dialog" aria-modal="true">${html}</div>`;
+  $('#modal-root').appendChild(ov);
+  const m={ov,el:ov.firstElementChild,onClose,locked};modals.push(m);
+  ov.addEventListener('mousedown',e=>{if(e.target===ov&&!locked)closeModal(m)});
+  ov.addEventListener('click',e=>{if(e.target.closest('[data-close]'))closeModal(m)});
+  const f=m.el.querySelector('[autofocus],input:not([type=file]),select,textarea,button');if(f)setTimeout(()=>f.focus({preventScroll:true}),30);
+  return m;
+}
+function closeModal(m){m=m||modals[modals.length-1];if(!m)return;const i=modals.indexOf(m);if(i<0)return;modals.splice(i,1);m.ov.remove();if(m.onClose)m.onClose()}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(ui.notifOpen){toggleNotifs(false);return}const m=modals[modals.length-1];if(m&&!m.locked)closeModal(m)}});
+function confirmDialog({title,body,ok='Confirm',danger=false}){
+  return new Promise(res=>{let settled=false;
+    const m=openModal(`<div class="mh"><h2>${esc(title)}</h2></div><div class="mb"><p class="muted">${body}</p></div>
+      <div class="mf"><button class="btn" data-close data-no>Cancel</button><button class="btn ${danger?'danger solid':'primary'}" data-yes>${esc(ok)}</button></div>`,{cls:'narrow',onClose:()=>{if(!settled)res(false)}});
+    m.el.querySelector('[data-yes]').onclick=()=>{settled=true;closeModal(m);res(true)};
+  });
+}
+const mhead=(t)=>`<div class="mh"><h2>${t}</h2><button class="iconbtn sm" data-close aria-label="Close">${ico('x',18)}</button></div>`;
+
+/* ----- Add chooser ----- */
+function openAddChooser(prefill={}){
+  const m=openModal(`${mhead('Add homework')}<div class="mb"><div class="choice">
+    <button data-c="type">${ico('type',26)}<b>Type it in</b><span>Subject, task, due date. Quick and exact.</span></button>
+    <button data-c="photo">${ico('image',26)}<b>Upload photos</b><span>Agenda pages, board photos or screenshots. You check the results before they're added.</span></button></div></div>`);
+  m.el.querySelector('[data-c=type]').onclick=()=>{closeModal(m);openHWForm({prefill})};
+  m.el.querySelector('[data-c=photo]').onclick=()=>{closeModal(m);openUploadFlow()};
+}
+
+/* ----- Homework form (add + edit; edit autosaves) ----- */
+function subjectOptions(sel){return S.subjects.map(s=>`<option value="${esc(s.id)}" ${s.id===sel?'selected':''}>${esc(s.icon)}  ${esc(s.name)}</option>`).join('')}
+function openHWForm({hw=null,prefill={}}={}){
+  const editing=!!hw;
+  const d=editing?{...hw,attachments:[...hw.attachments]}:{type:'homework',subjectId:prefill.subjectId||S.subjects[0]?.id||'',title:prefill.title||'',description:'',dueDate:prefill.dueDate||addDays(todayStr(),1),dueTime:'',priority:'medium',difficulty:'medium',xp:DIFF.medium.xp,xpCustom:false,notes:'',attachments:[],sourceImageId:null};
+  const addedFiles=[];let saved=false;
+  const opt=(o,sel)=>Object.entries(o).map(([k,v])=>`<option value="${k}" ${k===sel?'selected':''}>${v.label||v}</option>`).join('');
+  const m=openModal(`${mhead(editing?'Edit homework':'Add homework')}<form class="mb" id="hwform" novalidate><div class="fgrid">
+    <label class="field"><span>Subject</span><select class="sel" name="subjectId">${subjectOptions(d.subjectId)}</select></label>
+    <label class="field"><span>Type</span><select class="sel" name="type">${opt(TYPES,d.type)}</select></label>
+    <label class="field full"><span>Title</span><input class="inp" name="title" maxlength="160" required value="${esc(d.title)}" placeholder="Exercises 12–20"></label>
+    <label class="field full"><span>Description</span><textarea class="txt" name="description" placeholder="Complete exercises 12–20 from page 84.">${esc(d.description)}</textarea></label>
+    <label class="field"><span>Due date</span><input class="inp" type="date" name="dueDate" required value="${esc(d.dueDate)}"></label>
+    <label class="field"><span>Due time (optional)</span><input class="inp" type="time" name="dueTime" value="${esc(d.dueTime)}"></label>
+    <label class="field"><span>Priority</span><select class="sel" name="priority">${opt(PRIO,d.priority)}</select></label>
+    <label class="field"><span>Difficulty</span><select class="sel" name="difficulty">${opt(DIFF,d.difficulty)}</select></label>
+    <label class="field"><span>XP reward</span><input class="inp" type="number" min="0" max="1000" step="5" name="xp" value="${d.xp}"><span class="hint" id="xphint"></span></label>
+    <div class="field"><span>Attachments</span><div><label class="btn sm" style="cursor:pointer">${ico('clip',14)}Add files<input type="file" id="attin" multiple hidden></label></div><div class="thumbs" id="attlist"></div></div>
+    <label class="field full"><span>Notes (optional)</span><textarea class="txt" name="notes" placeholder="Anything to remember">${esc(d.notes)}</textarea></label>
+    ${!editing&&Class.status==='ready'&&Class.canWrite!==false?`<label class="row full" style="cursor:pointer"><input type="checkbox" name="shareClass"> <span>Also post this to the class agenda (everyone can see it; only you and an admin can edit or delete it)</span></label>`:''}
+    ${editing&&d.sourceImageId&&S.files[d.sourceImageId]?`<div class="field full"><span>Added from this photo</span><div class="thumbs"><button type="button" class="att" data-view="${esc(d.sourceImageId)}"><img alt="" src="${esc(S.files[d.sourceImageId].thumb)}">View photo</button></div></div>`:''}
+    <p class="err" id="formerr" style="color:var(--bad);font-size:13.5px;grid-column:1/-1" role="alert"></p>
+  </div>
+  <div class="mf" style="padding:6px 0 0">${editing?`<button type="button" class="btn danger" data-del>${ico('trash',16)}Delete</button><span style="flex:1"></span><button type="button" class="btn primary" data-close>Done</button>`:`<button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn primary">Add homework</button>`}</div></form>`,
+    {cls:'wide',locked:!editing,onClose:()=>{if(!editing&&!saved)addedFiles.forEach(id=>{delete S.files[id];P.delFile(id)})}});
+  const form=m.el.querySelector('#hwform'),q=n=>form.elements[n];
+  const hint=()=>{const a=autoXP(q('difficulty').value);$('#xphint',m.el).innerHTML=(+q('xp').value===a)?'Matches the difficulty.':`Automatic would be ${a}. <a href="#" data-xpauto style="color:var(--accent)">Use it</a>`};
+  const renderAtt=()=>{$('#attlist',m.el).innerHTML=d.attachments.map(id=>{const f=S.files[id];if(!f)return'';return`<span class="att" ${f.thumb?`data-view="${esc(id)}" style="cursor:pointer"`:''}>${f.thumb?`<img alt="" src="${esc(f.thumb)}">`:ico('clip',14)}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px">${esc(f.name)}</span><button type="button" data-rmatt="${esc(id)}" aria-label="Remove ${esc(f.name)}">×</button></span>`}).join('')};
+  renderAtt();hint();
+  const collect=()=>({type:q('type').value,subjectId:q('subjectId').value,title:q('title').value,description:q('description').value,dueDate:q('dueDate').value,dueTime:q('dueTime').value,priority:q('priority').value,difficulty:q('difficulty').value,xp:Math.max(0,Math.round(+q('xp').value||0)),xpCustom:d.xpCustom,notes:q('notes').value,attachments:d.attachments});
+  const valid=v=>!v.title.trim()?'Give it a title.':!parseYmd(v.dueDate)?'Choose a due date.':!v.subjectId?'Choose a subject.':'';
+  const autosave=debounce(()=>{if(!editing)return;const v=collect();if(valid(v))return;A.updateHomework(hw.id,v)},450);
+  q('difficulty').addEventListener('change',()=>{if(!d.xpCustom)q('xp').value=autoXP(q('difficulty').value);hint()});
+  q('xp').addEventListener('input',()=>{d.xpCustom=+q('xp').value!==autoXP(q('difficulty').value);hint()});
+  form.addEventListener('input',autosave);form.addEventListener('change',autosave);
+  form.addEventListener('click',async e=>{
+    if(e.target.closest('[data-xpauto]')){e.preventDefault();q('xp').value=autoXP(q('difficulty').value);d.xpCustom=false;hint();autosave();return}
+    const rm=e.target.closest('[data-rmatt]');if(rm){e.stopPropagation();d.attachments=d.attachments.filter(x=>x!==rm.dataset.rmatt);renderAtt();
+      if(editing){A.updateHomework(hw.id,{attachments:d.attachments})}else{delete S.files[rm.dataset.rmatt];P.delFile(rm.dataset.rmatt)}return}
+    const vw=e.target.closest('[data-view]');if(vw&&!e.target.closest('[data-rmatt]')){viewFile(vw.dataset.view);return}
+    if(e.target.closest('[data-del]')){if(await confirmDialog({title:'Delete this homework?',body:'This can\u2019t be undone. XP you already earned stays in your total.',ok:'Delete',danger:true})){closeModal(m);A.deleteHomework(hw.id);toast('Homework deleted')}}
+  });
+  $('#attin',m.el).addEventListener('change',async e=>{
+    for(const f of [...e.target.files]){try{const meta=await storeAttachment(f);d.attachments.push(meta.id);addedFiles.push(meta.id);renderAtt();if(editing)A.updateHomework(hw.id,{attachments:d.attachments})}catch(err){toast(err.message||'Couldn\u2019t add that file.',{kind:'bad'})}}
+    e.target.value='';
+  });
+  form.addEventListener('submit',async e=>{e.preventDefault();const v=collect();const err=valid(v);$('#formerr',m.el).textContent=err;if(err)return;
+    saved=true;const h=A.addHomework({...v,sourceImageId:d.sourceImageId});
+    if(q('shareClass')&&q('shareClass').checked){
+      try{
+        await ensureClassCloudReady();
+        const shareId=d.sourceImageId||d.attachments.find(id=>/^image\//.test(S.files[id]?.type||''));
+        const sharedImage=await getLocalImageData(shareId);
+        const post=await classCreate(v,sharedImage);h.classPostId=post.id;P.hw(h);
+        closeModal(m);toast('Homework added and shared with your class');
+      }catch(e2){
+        closeModal(m);toast('Homework added locally, but it could not be shared. Check your connection.',{kind:'bad',ms:6000});
+      }
+      return;
+    }
+    closeModal(m);toast('Homework added');});
+}
+
+/* ----- File viewer ----- */
+async function viewFile(id){
+  const f=S.files[id];if(!f)return;
+  let rec;try{rec=await Data.get('blobs',id)}catch(e){}
+  const isImg=f.type.startsWith('image/');
+  const m=openModal(`${mhead(esc(f.name))}<div class="mb">${isImg&&rec?`<img class="fullimg" alt="${esc(f.name)}" src="${rec.data}">`:`<p class="muted">Preview isn\u2019t available for this file type.</p>${rec?`<button class="btn" id="savecopy" style="margin-top:10px">${ico('download',16)}Save a copy</button>`:''}`}</div>`,{cls:'wide'});
+  const b=$('#savecopy',m.el);if(b)b.onclick=async()=>{const dl=await Cap.quick('downloads');if(!dl)return toast('Saving files isn\u2019t available here.',{kind:'bad'});try{await dl.save({filename:f.name,data:dataUrlToBlob(rec.data)})}catch(e){if(e.code!=='declined')toast('Couldn\u2019t save that file type here.',{kind:'bad'})}};
+}
+
+/* ----- Upload flow: choose → read → review/confirm ----- */
+function openUploadFlow(){
+  const U={items:[],busy:false,aiOff:!S.settings.aiReading,note:''};
+  const m=openModal(`${mhead('Upload agenda photos')}<div class="mb" id="upbody"></div><div class="mf" id="upfoot"></div>`,{cls:'wide',locked:true});
+  const body=$('#upbody',m.el),foot=$('#upfoot',m.el);
+  const err=c=>({not_granted:'Automatic reading was declined, so fill in the details by hand.',unavailable:'Automatic reading isn\u2019t available here, so fill in the details by hand.',images_unavailable:'Automatic reading can\u2019t use images here, so fill in the details by hand.',rate_limited:'Too many requests right now. Fill in the details by hand, or try again in a moment.',image_rejected:'That image couldn\u2019t be read. Fill in the details by hand.',sampling_disabled:'Automatic reading is turned off for this account.'}[c]||'Couldn\u2019t read this photo automatically. Fill in what you see.');
+  const newDet=(o={})=>({k:uid('d'),subjectId:'',title:'',description:'',dueDate:'',dueTime:'',difficulty:'medium',confidence:'',added:false,removed:false,...o});
+  function stepPick(){
+    body.innerHTML=`<div class="drop" id="drop">${ico('image',34)}<b style="color:var(--text);font-size:17px">Choose or drop photos here</b><span>JPG, PNG or WEBP. You can select multiple photos at once.</span>
+      <button type="button" class="btn primary" id="choosephotos" style="margin-top:6px">${ico('image',16)}Choose photos</button><input id="imgin" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple hidden></div>
+      <p class="hint" style="margin-top:12px">${U.aiOff?'Automatic reading is off. You\u2019ll type the details next to each photo.':'We\u2019ll try to read each photo and suggest the subject, task and date. Nothing is added until you confirm it.'}</p>`;
+    foot.innerHTML=`<button class="btn" data-close>Cancel</button>`;
+    const inp=$('#imgin',body),drop=$('#drop',body),choose=$('#choosephotos',body);
+    choose.onclick=()=>{inp.value='';inp.click()};
+    inp.onchange=()=>{const files=[...inp.files];if(files.length)handle(files);};
+    drop.ondragover=e=>{e.preventDefault();drop.classList.add('over')};drop.ondragleave=()=>drop.classList.remove('over');
+    drop.ondrop=e=>{e.preventDefault();drop.classList.remove('over');const files=[...e.dataTransfer.files];if(files.length)handle(files);};
+  }
+  async function handle(files){
+    files=files.filter(imageFileSupported);
+    if(!files.length)return toast('Choose JPG, PNG or WEBP images.',{kind:'bad'});
+    if(files.length>10){files=files.slice(0,10);toast('Only the first 10 photos were selected.',{kind:'bad',ms:4500});}
+    U.busy=true;U.items=files.map(f=>({file:f,status:'wait',dets:[],meta:null,dataUrl:'',msg:''}));renderReview();
+    for(const it of U.items){
+      it.status='read';renderReview();
+      try{const r=await storeImage(it.file,'agenda');it.meta=r.meta;it.dataUrl=r.dataUrl;
+        if(!U.aiOff){
+          try{const out=await readImageWithAI(r.blob);it.meta.extractedText=out.rawText;it.meta.ocr={engine:'claude',status:'done',items:out.items,at:new Date().toISOString()};
+            it.dets=out.items.map(x=>newDet({...x}));it.status='done';
+            if(!it.dets.length){it.dets=[newDet()];it.msg='We couldn\u2019t find homework in this photo. Add it by hand if you can see some.'}
+          }catch(e){const c=e&&e.code;if(['not_granted','sampling_disabled','capability_disabled','unavailable','images_unavailable'].includes(c))U.aiOff=true;
+            it.meta.ocr={engine:'claude',status:'failed',error:c||'error',at:new Date().toISOString()};it.dets=[newDet()];it.status='manual';it.msg=err(c)}
+        }else{it.dets=[newDet()];it.status='manual';it.msg=''}
+        S.files[it.meta.id]=it.meta;P.file(it.meta,it.dataUrl);
+      }catch(e){it.status='fail';it.msg='This image couldn\u2019t be opened. Try a JPG or PNG.'}
+      renderReview();
+    }
+    U.busy=false;renderReview();
+  }
+  function detCard(it,ii,dt,di){
+    if(dt.removed)return'';
+    if(dt.added){const s=subj(dt.subjectId);return`<div class="det added"><div class="row">${tile(s,'sm')}<b>${esc(s.name)}</b><span class="muted">${esc(dt.title)}</span><span class="pill ok" style="margin-left:auto">Added</span></div></div>`}
+    return`<div class="det" data-ii="${ii}" data-di="${di}">
+      ${dt.confidence?`<span class="hint">Detected${dt.confidence==='low'?' (low confidence, please check)':''}. Check and correct anything below.</span>`:''}
+      <div class="fgrid"><label class="field"><span>Subject</span><select class="sel" data-f="subjectId"><option value="">Choose…</option>${subjectOptions(dt.subjectId)}</select></label>
+      <label class="field"><span>Difficulty</span><select class="sel" data-f="difficulty">${Object.entries(DIFF).map(([k,v])=>`<option value="${k}" ${dt.difficulty===k?'selected':''}>${v.label} · ${v.xp} XP</option>`).join('')}</select></label>
+      <label class="field full"><span>Homework</span><input class="inp" data-f="title" value="${esc(dt.title)}" placeholder="Exercises 4–8"></label>
+      <label class="field full"><span>Details (optional)</span><input class="inp" data-f="description" value="${esc(dt.description)}"></label>
+      <label class="field"><span>Due date</span><input class="inp" type="date" data-f="dueDate" value="${esc(dt.dueDate)}"></label>
+      <label class="field"><span>Due time (optional)</span><input class="inp" type="time" data-f="dueTime" value="${esc(dt.dueTime)}"></label></div>
+      <div class="row wrap"><button class="btn primary sm" data-confirm>Confirm</button><button class="btn ghost sm" data-remove>Discard</button><span class="hint" data-derr style="color:var(--bad)"></span></div></div>`;
+  }
+  function renderReview(){
+    const total=U.items.length,read=U.items.filter(i=>['done','manual','fail'].includes(i.status)).length;
+    body.innerHTML=(U.busy?`<p class="muted" style="margin-bottom:6px">Reading photo ${Math.min(read+1,total)} of ${total}…</p>`:`<p class="muted">Check each item, fix anything that\u2019s wrong, then confirm.</p>`)+
+      U.items.map((it,ii)=>`<div class="src"><div>${it.dataUrl?`<img alt="Uploaded photo ${ii+1}" src="${it.dataUrl}" data-zoom="${ii}">`:`<div style="width:130px;height:130px;border-radius:12px;background:var(--bg2)"></div>`}</div>
+        <div class="stack">${it.status==='wait'?'<p class="muted">Waiting…</p>':it.status==='read'?'<p class="muted">Reading this photo…</p>':it.status==='fail'?`<p style="color:var(--bad)">${esc(it.msg)}</p>`:
+          `${it.msg?`<p class="muted" style="font-size:14px">${esc(it.msg)}</p>`:''}${it.dets.map((dt,di)=>detCard(it,ii,dt,di)).join('')}<div><button class="btn ghost sm" data-adddet="${ii}">${ico('plus',14)}Add another from this photo</button></div>`}</div></div>`).join('');
+    const pend=U.items.some(it=>it.dets.some(d=>!d.added&&!d.removed&&d.title.trim()));
+    foot.innerHTML=`${U.busy?'':`<button class="btn" data-close>${U.items.some(i=>i.dets.some(d=>d.added))?'Done':'Cancel'}</button>`}${pend&&!U.busy?`<button class="btn primary" data-all>Confirm all with a title</button>`:''}`;
+  }
+  const dets=el=>{const c=el.closest('.det');return c?{it:U.items[+c.dataset.ii],dt:U.items[+c.dataset.ii].dets[+c.dataset.di],c}:null};
+  async function ensureAgendaPhotoShared(it){
+    if(!SUPABASE_CONFIGURED||!supabaseClient||Class.status!=='ready')return null;
+    if(it.sharedPath)return it.sharedPath;
+    if(!it.dataUrl)return null;
+    const base=String(it.meta?.id||uid('agenda')).replace(/[^\w.-]/g,'_');
+    const path=`${Class.classKey}/${Class.me}/agenda-${base}.jpg`;
+    await cloudUploadImage(it.dataUrl,path);
+    it.sharedPath=path;
+    return path;
+  }
+  async function confirmDet(it,dt,c){
+    const e=!dt.title.trim()?'Add a title.':!dt.subjectId?'Choose a subject.':!parseYmd(dt.dueDate)?'Choose a due date.':'';
+    if(e){if(c){const x=$('[data-derr]',c);if(x)x.textContent=e}return false}
+    const h=A.addHomework({type:'homework',subjectId:dt.subjectId,title:dt.title,description:dt.description,dueDate:dt.dueDate,dueTime:dt.dueTime,priority:'medium',difficulty:dt.difficulty,xp:autoXP(dt.difficulty),notes:'',attachments:[],sourceImageId:it.meta?.id||null});
+    if(SUPABASE_CONFIGURED&&supabaseClient){
+      try{
+        await ensureClassCloudReady();
+        const path=await ensureAgendaPhotoShared(it);
+        const post=await classCreate({type:'homework',subjectId:dt.subjectId,title:dt.title,description:dt.description,dueDate:dt.dueDate,dueTime:dt.dueTime,priority:'medium',difficulty:dt.difficulty,notes:''},null,path);
+        h.classPostId=post.id;P.hw(h);
+      }catch(e2){
+        if(c){const x=$('[data-derr]',c);if(x)x.textContent='Added to your personal agenda, but sharing failed. Your local data is safe.'}
+        toast('Homework saved locally, but the shared Class Agenda upload failed.',{kind:'bad',ms:6000});
+      }
+    }
+    dt.added=true;return true;
+  }
+  m.el.addEventListener('input',e=>{const f=e.target.dataset.f;if(!f)return;const x=dets(e.target);if(x)x.dt[f]=e.target.value});
+  m.el.addEventListener('change',e=>{const f=e.target.dataset.f;if(!f)return;const x=dets(e.target);if(x)x.dt[f]=e.target.value});
+  m.el.addEventListener('click',async e=>{
+    const t=e.target;
+    if(t.closest('[data-confirm]')){
+      const x=dets(t);
+      if(x){
+        const b=t.closest('[data-confirm]');if(b)b.disabled=true;
+        try{if(await confirmDet(x.it,x.dt,x.c)){renderReview();toast('Added to your agenda')}}catch(e2){console.error(e2);toast('Couldn’t finish that upload.',{kind:'bad'})}
+      }
+      return;
+    }
+    if(t.closest('[data-remove]')){const x=dets(t);if(x){x.dt.removed=true;renderReview()}return}
+    const ad=t.closest('[data-adddet]');
+    if(ad){U.items[+ad.dataset.adddet].dets.push(newDet());renderReview();return}
+    if(t.closest('[data-all]')){
+      let n=0;
+      for(const it of U.items)for(const dt of it.dets){
+        if(!dt.added&&!dt.removed&&dt.title.trim()){
+          if(await confirmDet(it,dt,null))n++;
+        }
+      }
+      renderReview();toast(n?`${n} added to your agenda`:'Nothing could be added. Check subject and date.',{kind:n?'':'bad'});return;
+    }
+    const z=t.closest('[data-zoom]');
+    if(z){const it=U.items[+z.dataset.zoom];openModal(`${mhead('Photo')}<div class="mb"><img class="fullimg" alt="" src="${it.dataUrl}"></div>`,{cls:'wide'})}
+  });
+  stepPick();
+}
+
+/* ----- Subject modal ----- */
+function openSubjectForm(s=null){
+  let accent=s?.accent||ACCENTS[S.subjects.length%ACCENTS.length];
+  const m=openModal(`${mhead(s?'Edit subject':'New subject')}<form class="mb" id="subform"><div class="fgrid">
+    <label class="field full"><span>Name</span><input class="inp" name="name" maxlength="30" required value="${esc(s?.name||'')}" placeholder="Computer Science"></label>
+    <label class="field"><span>Icon (an emoji or up to 2 letters)</span><input class="inp" name="icon" maxlength="4" value="${esc(s?.icon||'')}" placeholder="💻"></label>
+    <div class="field"><span>Accent colour</span><div class="swatches" id="sw">${ACCENTS.map(c=>`<button type="button" class="swatch ${c===accent?'on':''}" style="--c:${c}" data-c="${c}" aria-label="Colour ${c}"></button>`).join('')}</div></div></div>
+    <p id="suberr" style="color:var(--bad);font-size:13.5px;margin-top:8px" role="alert"></p>
+    <div class="mf" style="padding:10px 0 0">${s&&!s.builtin?`<button type="button" class="btn danger" data-del>${ico('trash',16)}Delete</button><span style="flex:1"></span>`:''}<button type="button" class="btn" data-close>Cancel</button><button class="btn primary" type="submit">${s?'Save':'Create subject'}</button></div></form>`);
+  const form=m.el.querySelector('form');
+  $('#sw',m.el).onclick=e=>{const b=e.target.closest('[data-c]');if(!b)return;accent=b.dataset.c;$$('.swatch',m.el).forEach(x=>x.classList.toggle('on',x===b))};
+  form.onsubmit=e=>{e.preventDefault();const name=form.elements.name.value.trim();if(!name){$('#suberr',m.el).textContent='Give the subject a name.';return}
+    if(S.subjects.some(x=>x.id!==s?.id&&x.name.toLowerCase()===name.toLowerCase())){$('#suberr',m.el).textContent='You already have a subject with that name.';return}
+    const d={name,icon:form.elements.icon.value||name.slice(0,2),accent};if(s)A.updateSubject(s.id,d);else{const n=A.addSubject(d);toast('Subject created')}closeModal(m)};
+  const del=m.el.querySelector('[data-del]');if(del)del.onclick=()=>{
+    const n=S.homework.filter(h=>h.subjectId===s.id).length;
+    if(n){$('#suberr',m.el).textContent=`This subject has ${n} assignment${n>1?'s':''}. Move or delete them first.`;return}
+    closeModal(m);A.deleteSubject(s.id);go('subjects');toast('Subject deleted')};
+}
+
+/* ----- Level-up overlay ----- */
+function showLevelUp(level){
+  const ov=document.createElement('div');ov.className='levelup';
+  ov.innerHTML=`<div class="lu" role="alert"><h2>LEVEL UP!</h2><div class="big">${level}</div><p>You\u2019re now level ${level}.</p></div>`;
+  document.body.appendChild(ov);const close=()=>ov.remove();ov.onclick=close;setTimeout(close,3200);
+}
+function floatXP(text,el){
+  const r=el?el.getBoundingClientRect():null;const n=document.createElement('div');n.className='floatxp';n.textContent=text;
+  n.style.left=(r?r.left+r.width/2:innerWidth/2)+'px';n.style.top=(r?r.top:innerHeight/2)+'px';document.body.appendChild(n);setTimeout(()=>n.remove(),1200);
+}
+
+/* ----- Notifications panel ----- */
+function toggleNotifs(force){
+  const open=force??!ui.notifOpen;ui.notifOpen=open;const old=$('#notifpanel');if(old)old.remove();if(!open)return;
+  const list=S.notifs.slice(0,30);
+  const p=document.createElement('div');p.id='notifpanel';p.className='notifpanel';
+  p.innerHTML=`<div class="row between" style="padding:8px 10px"><b style="font-family:var(--font-d);font-size:17px">Notifications</b>${list.length?`<button class="btn ghost sm" data-act="readall">Mark all read</button>`:''}</div>`+
+    (list.length?list.map(n=>`<div class="notif ${n.read?'':'unread'}"><span>${esc(n.icon||'🔔')}</span><div><b>${esc(n.title)}</b><small>${esc(n.body||'')} ${esc(new Date(n.ts).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}))}</small></div></div>`).join(''):`<p class="muted" style="padding:14px">You\u2019re all caught up.</p>`);
+  document.body.appendChild(p);
+}
+document.addEventListener('mousedown',e=>{if(ui.notifOpen&&!e.target.closest('#notifpanel,[data-act=bell]'))toggleNotifs(false)});
+
+/* ----- Export / import / reset ----- */
+async function exportBackup(){
+  let snap;try{snap=await Data.dump()}catch(e){return toast('Couldn\u2019t read your data to export it.',{kind:'bad'})}
+  const json=JSON.stringify({app:'school-agenda',format:1,exportedAt:new Date().toISOString(),stores:snap});
+  const name=`school-agenda-backup-${todayStr()}.json`;
+  const dl=await Cap.quick('downloads');
+  if(dl){try{await dl.save({filename:name,data:json});toast('Backup ready');return}catch(e){if(e&&e.code==='declined')return}}
+  const m=openModal(`${mhead('Copy your backup')}<div class="mb stack"><p class="muted">Downloading isn\u2019t available here. Copy this text and keep it in a file named <b>${esc(name)}</b>. You can paste it back under Import.</p><textarea class="txt" id="bk" readonly style="min-height:160px;font-family:monospace;font-size:12px">${esc(json)}</textarea></div><div class="mf"><button class="btn" data-close>Close</button><button class="btn primary" id="cp">Copy to clipboard</button></div>`,{cls:'wide'});
+  $('#cp',m.el).onclick=async()=>{try{await navigator.clipboard.writeText(json);toast('Copied')}catch(e){$('#bk',m.el).select();toast('Press Ctrl+C to copy the selected text.')}};
+}
+function validateBackup(o){
+  if(!o||o.app!=='school-agenda'||!o.stores||typeof o.stores!=='object')return'This doesn\u2019t look like an Agenda backup file.';
+  for(const[n]of STORES){if(o.stores[n]!==undefined&&!Array.isArray(o.stores[n]))return`The backup is damaged (${n}).`}
+  if(!Array.isArray(o.stores.homework)||!Array.isArray(o.stores.subjects))return'The backup is missing homework or subjects.';
+  return'';
+}
+function openImport(){
+  const m=openModal(`${mhead('Import backup')}<div class="mb stack"><label class="btn" style="cursor:pointer;justify-self:start">${ico('upload',16)}Choose backup file<input id="bkfile" type="file" accept=".json,application/json" hidden></label>
+    <label class="field"><span>…or paste the backup text</span><textarea class="txt" id="bktext" style="min-height:90px"></textarea></label><p id="imperr" style="color:var(--bad);font-size:13.5px" role="alert"></p></div>
+    <div class="mf"><button class="btn" data-close>Cancel</button><button class="btn primary" id="goimp">Continue</button></div>`);
+  const run=async text=>{
+    let o;try{o=JSON.parse(text)}catch(e){$('#imperr',m.el).textContent='That file isn\u2019t valid JSON.';return}
+    const bad=validateBackup(o);if(bad){$('#imperr',m.el).textContent=bad;return}
+    const ok=await confirmDialog({title:'Import backup',body:'This will replace your current saved data. Continue?',ok:'Import',danger:true});if(!ok)return;
+    if(!Data.ok){$('#imperr',m.el).textContent='Saving isn\u2019t available in this browser, so nothing can be imported.';return}
+    try{
+      /* Backups are merged, never used to wipe the current database.
+         Existing records win on ID collisions unless the backup contains a newer updatedAt. */
+      const cur=await Data.dump();
+      const merged={...cur};
+      for(const [store,rows] of Object.entries(o.stores)){
+        if(!Array.isArray(rows))continue;
+        const key=(STORES.find(x=>x[0]===store)||[])[1];
+        if(!key){merged[store]=rows;continue}
+        const map=new Map((cur[store]||[]).map(r=>[r?.[key],r]));
+        for(const r of rows){
+          if(!r||r[key]==null)continue;
+          const existing=map.get(r[key]);
+          if(!existing){map.set(r[key],r);continue}
+          const ru=String(r.updatedAt||r.createdAt||'');
+          const eu=String(existing.updatedAt||existing.createdAt||'');
+          if(ru>eu)map.set(r[key],r);
+        }
+        merged[store]=[...map.values()];
+      }
+      await Data.replaceAll(merged);
+      await loadState();closeModal(m);renderAll();toast('Backup imported without deleting existing data');
+    }catch(e){console.error(e);$('#imperr',m.el).textContent='Import failed and your current data was left untouched.'}
+  };
+  $('#bkfile',m.el).onchange=async e=>{const f=e.target.files[0];if(f)run(await f.text())};
+  $('#goimp',m.el).onclick=()=>{const t=$('#bktext',m.el).value.trim();if(t)run(t);else $('#imperr',m.el).textContent='Choose a file or paste the backup text.'};
+}
+async function resetAll(){
+  const ok=await confirmDialog({title:'Clear all data?',body:'This permanently deletes every assignment, XP, level, streak, achievement, subject and uploaded image on this device. Export a backup first if you might want it back.',ok:'Delete everything',danger:true});if(!ok)return;
+  try{
+    const fresh={meta:[{key:'student',value:defaultStudent()},{key:'settings',value:defaultSettings()},{key:'schema',value:SCHEMA_VERSION},{key:'initialized',value:true}],subjects:seedSubjects()};
+    if(Data.ok)await Data.replaceAll(fresh);
+    S.student=defaultStudent();S.settings=defaultSettings();S.subjects=seedSubjects();S.homework=[];S.ach={};S.files={};S.xpLog=[];S.notifs=[];S.issues=0;
+    applyTheme();go('dashboard');renderAll();toast('All data cleared');
+  }catch(e){console.error(e);toast('Couldn\u2019t clear data.',{kind:'bad'})}
+}
+
+
+/* =====================================================================
+   12b. CLASS AGENDA (shared). Everyone with access can read every post.
+   Only the person who posted it, or an admin, can edit or delete it.
+   This is enforced by the database rules declared at publish time, not just by hiding buttons:
+     agendas                read: everyone   write: admin
+     agendas/{self}         write: that person (Contributor or above)
+   Each person's posts live in agendas/<their id>, so nobody else can write there except admins.
+   ===================================================================== */
+const Class={
+  db:null,user:null,me:null,isAdmin:false,canWrite:null,docs:[],prof:{},status:'loading',
+  q:{},mine:false,subject:'',className:'',classKey:'',people:[],peopleStatus:'off',
+  profileWatch:null,agendaWatch:null,lastError:'',lastSyncAt:null
+};
+const clip=(s,n)=>String(s??'').slice(0,n);
+const MAX_POSTS_PER_PERSON=120;
+
+function normPost(e,ownerId){
+  if(!e||typeof e!=='object'||!e.id)return null;
+  const sj={
+    name:clip(e.subject_name||e.subject?.name||'Subject',30),
+    icon:clip(e.subject_icon||e.subject?.icon||'•',4),
+    accent:/^#[0-9a-f]{6}$/i.test(e.subject_accent||e.subject?.accent||'')?(e.subject_accent||e.subject.accent):'#8a90b3'
+  };
+  return{
+    id:String(e.id),
+    ownerId:String(e.owner_id||ownerId||''),
+    ownerName:clip(e.owner_name||'',60),
+    className:clip(e.class_name||'',40),
+    classKey:clip(e.class_key||'',60),
+    subject:sj,
+    type:TYPES[e.type]?e.type:'homework',
+    title:clip(e.title||'Untitled',160),
+    description:clip(e.description,600),
+    dueDate:parseYmd(e.due_date||e.dueDate)?(e.due_date||e.dueDate):todayStr(),
+    dueTime:/^\d{2}:\d{2}$/.test(e.due_time||e.dueTime||'')?(e.due_time||e.dueTime):'',
+    priority:PRIO[e.priority]?e.priority:'medium',
+    difficulty:DIFF[e.difficulty]?e.difficulty:'medium',
+    notes:clip(e.notes,600),
+    imagePath:e.image_path||e.imagePath||null,
+    imagePaths:(Array.isArray(e.image_paths)?e.image_paths.map(String).filter(Boolean):(e.image_path||e.imagePath?[String(e.image_path||e.imagePath)]:[])),
+    createdAt:String(e.created_at||e.createdAt||''),
+    updatedAt:String(e.updated_at||e.updatedAt||'')
+  };
+}
+const classPosts=()=>Class.docs.map(d=>normPost(d,d.owner_id)).filter(Boolean)
+  .sort((a,b)=>a.dueDate.localeCompare(b.dueDate)||(a.dueTime||'99:99').localeCompare(b.dueTime||'99:99')||a.createdAt.localeCompare(b.createdAt));
+const canManage=p=>!!Class.me&&(p.ownerId===Class.me||Class.isAdmin);
+
+function classError(e){
+  const c=String(e&&e.code||e&&e.statusCode||'');
+  const raw=String(e&&e.message||e&&e.error||'').toLowerCase();
+  if(c==='not_configured')return'Shared cloud features are not configured yet.';
+  if(c==='limit')return`You’ve reached the limit of ${MAX_POSTS_PER_PERSON} shared posts.`;
+  if(c==='42501'||c==='PGRST301')return'You don’t have permission to change that shared post.';
+  if(c==='PGRST116')return'That shared post no longer exists.';
+  if(c==='quota_exceeded'||raw.includes('exceed_storage_size_quota')||raw.includes('storage quota'))return'Shared photo storage is full. Try again later or ask an admin to clean up old photos.';
+  if(c==='413'||raw.includes('entitytoolarge')||raw.includes('too large'))return'That photo is too large. It was already compressed, but please choose a smaller image.';
+  return sharedError(e,'Couldn’t save to the shared class agenda.');
+}
+
+async function syncProfile(){
+  if(!supabaseClient||!S.student.profileComplete)return false;
+  try{
+    const p=await cloudRegisterStudent(S.student.name,S.student.className);
+    if(!p)return false;
+    S.student.id=p.id;
+    S.student.name=p.name||S.student.name;
+    S.student.className=normalizeClassName(p.class_name||S.student.className);
+    S.student.isAdmin=!!p.is_admin;
+    S.student.profileComplete=!!(S.student.name&&S.student.className);
+    P.student();
+    Class.me=p.id;Class.className=S.student.className;Class.classKey=classKey(S.student.className);Class.isAdmin=!!p.is_admin;
+    return true;
+  }catch(e){
+    console.error('Could not sync profile:',e);
+    toast(sharedError(e,'Could not save your profile.'),{kind:'bad',ms:5500});
+    try{
+      const p=await cloudOwnProfile();
+      if(p){
+        S.student.id=p.id;
+        S.student.name=String(p.name||S.student.name).slice(0,40);
+        S.student.className=normalizeClassName(p.class_name||S.student.className).slice(0,40);
+        S.student.isAdmin=!!p.is_admin;
+        S.student.profileComplete=!!(S.student.name&&S.student.className);
+        P.student();
+        Class.me=p.id;Class.className=S.student.className;Class.classKey=classKey(S.student.className);Class.isAdmin=!!p.is_admin;
+        updateChrome();renderAll();
+      }
+    }catch(restoreErr){console.error('Could not restore the saved profile after a failed sync:',restoreErr)}
+    return false;
+  }
+}
+async function fetchClassPosts(){
+  if(!supabaseClient)return false;
+  /* Register the CURRENT anonymous account and read its class in the same
+     server-side transaction. This removes the remaining startup/session race:
+     even a brand-new browser gets registered before the agenda is read. */
+  const user=await ensureSupabaseUser();
+  if(!user)throw new Error(SUPABASE_AUTH_LAST_ERROR||'Could not create the shared student session.');
+  Class.me=user.id;
+  const className=normalizeClassName(S.student.className);
+  const key=classKey(className);
+  if(!key)throw new Error('Your class is missing. Enter your class in Settings.');
+  Class.className=className;Class.classKey=key;Class.lastError='';
+
+  let data,error;
+  ({data,error}=await supabaseClient.rpc('register_student_and_get_current_class_agenda',{
+    p_name:String(S.student.name||'').trim().slice(0,40),
+    p_class_name:className.slice(0,40)
+  }));
+  if(error){
+    /* Fallback for an older project that does not have the combined RPC. */
+    const reg=await cloudRegisterStudent(S.student.name,S.student.className,user);
+    if(reg){
+      S.student.id=reg.id;S.student.name=String(reg.name||S.student.name).slice(0,40);
+      S.student.className=normalizeClassName(reg.class_name||S.student.className).slice(0,40);
+      S.student.isAdmin=!!reg.is_admin;S.student.profileComplete=true;P.student();
+      Class.me=reg.id;Class.className=S.student.className;Class.classKey=classKey(Class.className);Class.isAdmin=S.student.isAdmin;
+    }
+    const q=await supabaseClient.from('class_agenda_posts').select('*')
+      .eq('class_key',Class.classKey)
+      .order('due_date',{ascending:true,nullsFirst:false})
+      .order('due_time',{ascending:true,nullsFirst:false})
+      .order('created_at',{ascending:true});
+    data=q.data;error=q.error;
+  }
+  if(error){Class.lastError=sharedError(error,'Could not load shared class agenda.');throw error}
+  Class.docs=Array.isArray(data)?data:[];
+  Class.prof={};
+  for(const row of Class.docs)if(row.owner_id&&row.owner_name)Class.prof[row.owner_id]={name:row.owner_name};
+  Class.lastSyncAt=new Date().toISOString();
+  return true;
+}
+async function ensureClassCloudReady(){
+  if(!SUPABASE_CONFIGURED||!supabaseClient)throw new Error('Shared cloud features are not configured yet.');
+  const user=await ensureSupabaseUser();
+  if(!user)throw new Error(SUPABASE_AUTH_LAST_ERROR||'Could not create the shared student session.');
+  Class.me=user.id;
+  await fetchClassPosts();
+  Class.status='ready';
+  Class.canWrite=true;
+  return true;
+}
+async function fetchStudents(){
+  if(!supabaseClient||!S.student.isAdmin)throw new Error('Administrator access is required.');
+  const {data,error}=await supabaseClient.from('students')
+    .select('id,name,class_name,is_admin,created_at,updated_at').order('name',{ascending:true});
+  if(error)throw error;
+  Class.people=(data||[]).map(p=>({
+    id:p.id,name:String(p.name||'').slice(0,40),className:String(p.class_name||'').slice(0,40),
+    isAdmin:!!p.is_admin,createdAt:p.created_at,updatedAt:p.updated_at
+  }));
+  Class.peopleStatus='ready';return true;
+}
+function stopCloudWatchers(){
+  try{if(Class.profileWatch&&supabaseClient)supabaseClient.removeChannel(Class.profileWatch)}catch(e){}
+  try{if(Class.agendaWatch&&supabaseClient)supabaseClient.removeChannel(Class.agendaWatch)}catch(e){}
+  Class.profileWatch=null;Class.agendaWatch=null;
+}
+function startCloudWatchers(){
+  if(!supabaseClient)return;
+  stopCloudWatchers();
+  Class.agendaWatch=supabaseClient.channel('agenda-'+(Class.classKey||'unknown'))
+    .on('postgres_changes',{event:'*',schema:'public',table:'class_agenda_posts'},async()=>{
+      try{await fetchClassPosts();if(ui.route.name==='class')renderView()}catch(e){console.error('Shared agenda refresh failed:',e)}
+    }).subscribe();
+  if(S.student.isAdmin){
+    Class.profileWatch=supabaseClient.channel('students-directory')
+      .on('postgres_changes',{event:'*',schema:'public',table:'students'},async()=>{
+        try{await fetchStudents();if(ui.route.name==='students')renderView()}catch(e){console.error('Student directory refresh failed:',e)}
+      }).subscribe();
+  }
+}
+async function initClass(){
+  Class.className=normalizeClassName(S.student.className);
+  Class.classKey=classKey(Class.className);
+  Class.me=S.student.id;Class.isAdmin=!!S.student.isAdmin;Class.canWrite=!!supabaseClient;
+  if(!supabaseClient){
+    Class.status='off';Class.peopleStatus='off';Class.docs=[];Class.people=[];
+    if(ui.route.name==='class'||ui.route.name==='students')renderView();return;
+  }
+  try{
+    await ensureClassCloudReady();
+    const p=await cloudRegisterStudent(S.student.name,S.student.className,await ensureSupabaseUser());
+    if(p){
+      S.student.id=p.id;S.student.name=String(p.name||S.student.name).slice(0,40);
+      S.student.className=normalizeClassName(p.class_name||S.student.className).slice(0,40);
+      S.student.isAdmin=!!p.is_admin;S.student.profileComplete=true;P.student();
+      Class.me=p.id;Class.className=S.student.className;Class.classKey=classKey(Class.className);Class.isAdmin=S.student.isAdmin;
+      /* Re-read after the profile sync so admin status and class identity are current. */
+      await fetchClassPosts();
+    }
+    Class.status='ready';
+    if(S.student.isAdmin){try{Class.peopleStatus='loading';await fetchStudents()}catch(e){Class.peopleStatus='error';console.error('Could not load student directory:',e)}}
+    else{Class.people=[];Class.peopleStatus='off'}
+    startCloudWatchers();
+  }catch(e){
+    console.error('Could not initialize shared class agenda:',e);
+    Class.lastError=sharedError(e,'Could not initialize shared class agenda.');
+    Class.status='error';
+    if(ui.route.name==='students')Class.peopleStatus='error';
+  }
+  if(ui.route.name==='class'||ui.route.name==='students')renderView();
+}
+function sharedPostPayload(d,id,imagePath=null){
+  const s=subj(d.subjectId),now=new Date().toISOString();
+  return{
+    id,class_name:S.student.className,class_key:classKey(S.student.className),owner_id:Class.me,owner_name:S.student.name,
+    subject_name:s.name,subject_icon:s.icon,subject_accent:s.accent,type:TYPES[d.type]?d.type:'homework',
+    title:clip(String(d.title||'').trim(),160),description:clip(d.description,600),
+    due_date:d.dueDate||null,due_time:d.dueTime||null,priority:PRIO[d.priority]?d.priority:'medium',
+    difficulty:DIFF[d.difficulty]?d.difficulty:'medium',notes:clip(d.notes,600),image_path:imagePath||null,
+    created_at:now,updated_at:now
+  };
+}
+async function getLocalImageData(id){
+  if(!id||!Data.ok)return null;
+  try{const rec=await Data.get('blobs',id);return rec?.data||null}catch(e){return null}
+}
+function imagePathList(post){
+  const a=Array.isArray(post?.imagePaths)?post.imagePaths.filter(Boolean).map(String):[];
+  if(a.length)return [...new Set(a)];
+  return post?.imagePath?[String(post.imagePath)]:[];
+}
+async function classCreate(d,shareImage=null,imagePathOverride=null){
+  if(!supabaseClient)throw{code:'not_configured'};
+  /* Never silently fall back to local-only storage. Re-establish the current
+     cloud account/class before every shared write. */
+  await ensureClassCloudReady();
+  const id=sharedUuid();
+  const override=Array.isArray(imagePathOverride)?imagePathOverride.filter(Boolean).map(String):(imagePathOverride?[String(imagePathOverride)]:[]);
+  const incoming=Array.isArray(shareImage)?shareImage.filter(Boolean):(shareImage?[shareImage]:[]);
+  let imagePaths=override.slice();
+  try{
+    /* Upload images BEFORE creating the post. The old flow inserted the post,
+       then issued a second UPDATE just to attach image paths. That extra UPDATE
+       was the operation triggering the shared-post permission policy. */
+    if(incoming.length){
+      imagePaths=[];
+      for(let i=0;i<incoming.length;i++){
+        const path=`${Class.classKey}/${Class.me}/post-${id}-${i+1}.jpg`;
+        await cloudUploadImage(incoming[i],path);
+        imagePaths.push(path);
+      }
+    }
+    const payload=sharedPostPayload(d,id,imagePaths[0]||null);
+    payload.image_paths=imagePaths;
+    const ins=await supabaseClient.from('class_agenda_posts').insert(payload).select('*').single();
+    if(ins.error)throw ins.error;
+    await fetchClassPosts();
+    if(ui.route.name==='class'||ui.route.name==='agenda')renderView();
+    return{id,imagePath:imagePaths[0]||null,imagePaths};
+  }catch(e){
+    for(const path of imagePaths){try{await cloudDeleteImage(path)}catch(_) {}}
+    throw e;
+  }
+}
+
+async function classUpdate(post,d,{newImage,removeImage}={}){
+  if(!supabaseClient)throw{code:'not_configured'};
+  await ensureClassCloudReady();
+  const oldPaths=imagePathList(post);
+  let imagePaths=oldPaths.slice(),newPaths=[];
+  const incoming=Array.isArray(newImage)?newImage.filter(Boolean):(newImage?[newImage]:[]);
+  if(incoming.length){
+    imagePaths=[];
+    for(let i=0;i<incoming.length;i++){
+      const path=`${post.classKey||Class.classKey}/${Class.me}/post-${post.id}-${Date.now()}-${i+1}.jpg`;
+      await cloudUploadImage(incoming[i],path);
+      imagePaths.push(path);newPaths.push(path);
+    }
+  }else if(removeImage){imagePaths=[]}
+  const s=subj(d.subjectId);
+  /* Use the server-side ownership/class check for updates. This avoids the
+     fragile client-side table UPDATE path that was producing a false
+     "permission to change that shared post" error even for an admin/owner. */
+  const {data:updated,error}=await supabaseClient.rpc('update_class_agenda_post',{
+    p_id:post.id,
+    p_subject_name:s.name,
+    p_subject_icon:s.icon,
+    p_subject_accent:s.accent,
+    p_type:TYPES[d.type]?d.type:'homework',
+    p_title:clip(String(d.title||'').trim(),160),
+    p_description:clip(d.description,600),
+    p_due_date:d.dueDate||null,
+    p_due_time:d.dueTime||null,
+    p_priority:PRIO[d.priority]?d.priority:'medium',
+    p_difficulty:DIFF[d.difficulty]?d.difficulty:'medium',
+    p_notes:clip(d.notes,600),
+    p_image_paths:imagePaths
+  });
+  if(error||!updated){for(const path of newPaths)await cloudDeleteImage(path);if(error)throw error;throw new Error('The shared post could not be updated.')}
+  for(const path of oldPaths){if(!imagePaths.includes(path))await cloudDeleteImageIfUnused(path,post.id)}
+  await fetchClassPosts();if(ui.route.name==='class'||ui.route.name==='agenda')renderView();
+}
+async function classRemove(post){
+  if(!supabaseClient)throw{code:'not_configured'};
+  const {error}=await supabaseClient.from('class_agenda_posts').delete().eq('id',post.id);
+  if(error)throw error;
+  for(const path of imagePathList(post))await cloudDeleteImageIfUnused(path,post.id);
+  await fetchClassPosts();if(ui.route.name==='class'||ui.route.name==='agenda')renderView();
+}
+async function viewClassImages(paths){
+  const list=[...new Set((Array.isArray(paths)?paths:[paths]).filter(Boolean).map(String))];
+  if(!list.length){toast('This shared image is not available.',{kind:'bad'});return}
+  try{
+    const urls=[];
+    for(const path of list){const url=await cloudSignedImage(path);if(url)urls.push({path,url})}
+    if(!urls.length)throw new Error('No shared image URLs were returned.');
+    const body=urls.length===1
+      ? `<div class="mb"><img class="fullimg" alt="Shared agenda photo" src="${esc(urls[0].url)}"></div>`
+      : `<div class="photo-grid">${urls.map((x,i)=>`<button type="button" class="photo-tile" data-photo-url="${esc(x.url)}"><img alt="Shared agenda photo ${i+1}" src="${esc(x.url)}"><span>Photo ${i+1}</span></button>`).join('')}</div>`;
+    const m=openModal(`${mhead(urls.length===1?'Agenda photo':`Agenda photos (${urls.length})`)}${body}`,{cls:'wide'});
+    m.el.addEventListener('click',e=>{const b=e.target.closest('[data-photo-url]');if(!b)return;openModal(`${mhead('Agenda photo')}<div class="mb"><img class="fullimg" alt="Shared agenda photo" src="${esc(b.dataset.photoUrl)}"></div>`,{cls:'wide'})});
+  }catch(e){console.error(e);toast('Couldn’t load the shared photo(s).',{kind:'bad'})}
+}
+const viewClassImage=path=>viewClassImages([path]);
+function postCard(p){
+  const mine=p.ownerId===Class.me,manage=canManage(p);
+  const name=mine?'You':(p.ownerName||'Someone');
+  const pr=Class.prof[p.ownerId];
+  const added=S.homework.some(h=>h.classPostId===p.id);
+  const overdue=p.dueDate<todayStr();
+  const photoPaths=p.dueDate<todayStr()?[]:imagePathList(p);
+  return`<article class="hw ${overdue?'overdue':''}">
+    <span class="tile" style="--ac:${esc(p.subject.accent)}">${esc(p.subject.icon)}</span>
+    <div class="hw-main" style="cursor:default">
+      <div class="hw-top"><span>${esc(p.subject.name)}</span>${p.type!=='homework'?`<span class="pill acc">${TYPES[p.type]}</span>`:''}</div>
+      <h3 class="hw-title">${esc(p.title)}</h3>${p.description?`<p class="hw-desc">${esc(p.description)}</p>`:''}
+      <div class="hw-meta"><span class="pill ${overdue?'bad':p.dueDate===todayStr()?'acc':''}">${ico('calendar',13)}${esc(dueLabel(p))}${p.dueTime?' · '+fmtTime(p.dueTime):''}</span><span class="pill">${DIFF[p.difficulty].label}</span>
+        ${photoPaths.length?`<button class="pill acc" style="border:0;cursor:pointer" data-act="classimgs" data-paths="${esc(JSON.stringify(photoPaths))}">${ico('image',13)}View ${photoPaths.length===1?'photo':photoPaths.length+' photos'}</button>`:(p.dueDate<todayStr()&&imagePathList(p).length?`<span class="pill">${ico('image',13)}Photo expired</span>`:'')}</div>
+      <div class="postby">${pr&&pr.avatarUrl?`<img class="av" alt="" src="${esc(pr.avatarUrl)}">`:''}<span>Posted by ${esc(name)}</span></div>
+    </div>
+    <div class="hw-side"><button class="btn sm" data-act="classadd" data-pid="${esc(p.id)}" ${added?'disabled':''}>${added?'In my homework':'Add to mine'}</button>
+      ${manage?`<div class="acts"><button class="iconbtn sm" data-act="classedit" data-pid="${esc(p.id)}" aria-label="Edit post">${ico('edit',16)}</button><button class="iconbtn sm" data-act="classdel" data-pid="${esc(p.id)}" aria-label="Delete post">${ico('trash',16)}</button></div>`:''}</div>
+  </article>`;
+}
+function viewClass(){
+  const canPost=Class.status==='ready'&&Class.canWrite!==false;
+  const head=`<div class="page-h"><div><div class="row wrap" style="gap:8px;margin-bottom:4px"><h1 style="margin:0">Agenda</h1><span class="pill ok">Public to your class</span></div><p>Shared with every registered student in <b>${esc(Class.className||S.student.className||'')}</b> · ${Class.docs.length} shared post${Class.docs.length===1?'':'s'} loaded${Class.lastSyncAt?' · cloud synced':''}</p></div><div class="row">${canPost?`<button class="btn primary" data-act="classpost">${ico('plus',18)}Post to class</button>`:''}<button class="btn" data-act="classsync">${ico('refresh',16)}Sync</button></div></div>`;
+  if(Class.status==='loading')return head+`<div class="empty"><p>Loading the class agenda…</p></div>`;
+  if(Class.status==='off')return head+`<div class="empty"><h3>Public class agenda unavailable</h3><p>The shared class agenda needs the shared database connection. Your private homework still works normally.</p></div>`;
+  if(Class.status==='error')return head+`<div class="empty"><h3>Couldn\u2019t load the public class agenda</h3><p>${esc(Class.lastError||'Check your connection and reload the page.')}</p></div>`;
+  let posts=classPosts();
+  const subs=[...new Set(posts.map(p=>p.subject.name))].sort();
+  if(Class.mine)posts=posts.filter(p=>p.ownerId===Class.me);
+  if(Class.subject)posts=posts.filter(p=>p.subject.name===Class.subject);
+  const q=ui.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if(q.length)posts=posts.filter(p=>{const hay=[p.title,p.description,p.notes,p.subject.name,p.dueDate].join(' ').toLowerCase();return q.every(w=>hay.includes(w))});
+  const notes=[];
+  if(Class.isAdmin)notes.push('You\u2019re an admin: you can edit and delete any post.');
+  else notes.push('You can edit and delete your own posts. Only the person who posted and an admin can change a post.');
+  if(Class.canWrite===false)notes.push('You have view-only access, so you can\u2019t post. Ask the page owner for Contributor access.');
+  notes.push('Shared photos are automatically compressed and removed after their due date. Your personal homework, XP and streak stay private on your device.');
+  return head+`<div class="note">${notes.map(esc).join(' ')}</div>
+   <div class="row wrap" style="margin-bottom:14px"><div class="chips"><button class="chip ${!Class.mine?'on':''}" data-act="classf" data-k="all">Everyone</button><button class="chip ${Class.mine?'on':''}" data-act="classf" data-k="mine">My posts</button></div>
+    <select class="sel" style="width:auto" data-classsub aria-label="Subject"><option value="">All subjects</option>${subs.map(n=>`<option ${Class.subject===n?'selected':''}>${esc(n)}</option>`).join('')}</select></div>
+   ${posts.length?`<div class="hwlist">${posts.map(postCard).join('')}</div>`:`<div class="empty"><h3>No posts yet</h3><p>${canPost?'Post an assignment or an agenda photo for the whole class.':'Nothing has been posted yet.'}</p>${canPost?`<div class="row"><button class="btn primary" data-act="classpost">${ico('plus',18)}Post to class</button></div>`:''}</div>`}`;
+}
+function openClassForm(post=null){
+  const editing=!!post;
+  const sid=post?(matchSubject(post.subject.name)||S.subjects[0]?.id):(S.subjects[0]?.id||'');
+  const d=post||{type:'homework',title:'',description:'',dueDate:addDays(todayStr(),1),dueTime:'',priority:'medium',difficulty:'medium',notes:''};
+  const opt=(o,sel)=>Object.entries(o).map(([k,v])=>`<option value="${k}" ${k===sel?'selected':''}>${v.label||v}</option>`).join('');
+  const m=openModal(`${mhead(editing?'Edit post':'Post to class')}<form class="mb" id="cform" novalidate><div class="fgrid">
+    <label class="field"><span>Subject</span><select class="sel" name="subjectId">${subjectOptions(sid)}</select></label>
+    <label class="field"><span>Type</span><select class="sel" name="type">${opt(TYPES,d.type)}</select></label>
+    <label class="field full"><span>Title</span><input class="inp" name="title" maxlength="160" value="${esc(d.title)}" placeholder="Exercises 12–20"></label>
+    <label class="field full"><span>Description</span><textarea class="txt" name="description">${esc(d.description)}</textarea></label>
+    <label class="field"><span>Due date</span><input class="inp" type="date" name="dueDate" value="${esc(d.dueDate)}"></label>
+    <label class="field"><span>Due time (optional)</span><input class="inp" type="time" name="dueTime" value="${esc(d.dueTime)}"></label>
+    <label class="field"><span>Priority</span><select class="sel" name="priority">${opt(PRIO,d.priority)}</select></label>
+    <label class="field"><span>Difficulty</span><select class="sel" name="difficulty">${opt(DIFF,d.difficulty)}</select></label>
+    <label class="field full"><span>Notes (optional)</span><textarea class="txt" name="notes">${esc(d.notes)}</textarea></label>
+    <div class="field full"><span>Agenda photos (optional)</span><button type="button" class="btn sm" id="choosepostphotos">${ico('image',14)}Choose photos</button><input type="file" name="photo" id="postphoto" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple hidden><span class="hint" id="photohint">You can select multiple photos at once.</span>
+      ${editing&&imagePathList(post).length?`<label class="row" style="cursor:pointer"><input type="checkbox" name="rmphoto"> <span>Remove the current photo(s)</span></label>`:''}</div>
+    <p id="cerr" style="color:var(--bad);font-size:13.5px;grid-column:1/-1" role="alert"></p></div>
+    <p class="hint">Everyone with access to this page will see this post.</p>
+    <div class="mf" style="padding:8px 0 0"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn primary" id="csubmit">${editing?'Save changes':'Post to class'}</button></div></form>`,{cls:'wide',locked:true});
+  const form=m.el.querySelector('#cform');
+  const postPhoto=m.el.querySelector('#postphoto');
+  const choosePostPhotos=m.el.querySelector('#choosepostphotos');
+  const photoHint=m.el.querySelector('#photohint');
+  if(choosePostPhotos&&postPhoto){
+    choosePostPhotos.onclick=()=>{postPhoto.value='';postPhoto.click()};
+    postPhoto.addEventListener('change',()=>{
+      const files=[...postPhoto.files].filter(imageFileSupported);
+      photoHint.textContent=files.length?`${files.length} photo${files.length===1?'':'s'} selected.`:'You can select multiple photos at once.';
+    });
+  }
+  form.addEventListener('submit',async e=>{
+    e.preventDefault();const f=form.elements,v={type:f.type.value,subjectId:f.subjectId.value,title:f.title.value,description:f.description.value,dueDate:f.dueDate.value,dueTime:f.dueTime.value,priority:f.priority.value,difficulty:f.difficulty.value,notes:f.notes.value};
+    const err=!v.title.trim()?'Give it a title.':!parseYmd(v.dueDate)?'Choose a due date.':'';$('#cerr',m.el).textContent=err;if(err)return;
+    const btn=$('#csubmit',m.el);btn.disabled=true;btn.textContent='Posting…';
+    try{
+      const files=[...(f.photo?.files||[])].filter(imageFileSupported);
+      if(files.length>10)throw new Error('You can upload up to 10 photos per post.');
+      /* Upload the original File objects directly for Class Agenda. This avoids
+         browser canvas conversion entirely and is more reliable for large/mobile photos. */
+      if(editing)await classUpdate(post,v,{newImage:files,removeImage:!!(f.rmphoto&&f.rmphoto.checked)});else await classCreate(v,files);
+      closeModal(m);toast(editing?'Post updated':'Posted to the class agenda');
+    }catch(e2){$('#cerr',m.el).textContent=classError(e2);btn.disabled=false;btn.textContent=editing?'Save changes':'Post to class'}
+  });
+}
+
+/* =====================================================================
+   13. EVENTS
+   ===================================================================== */
+async function retryCloudConnection(){
+  SUPABASE_AUTH_LAST_ERROR='';
+  try{
+    const user=await ensureSupabaseUser();
+    if(!user)throw new Error(SUPABASE_AUTH_LAST_ERROR||'Supabase did not return an authenticated user.');
+    if(S.student.profileComplete){
+      const p=await cloudOwnProfile();
+      if(!p)await cloudRegisterStudent(S.student.name,S.student.className);
+    }
+    await initClass();
+    toast('Shared cloud connection restored');
+    renderAll();
+  }catch(e){
+    SUPABASE_AUTH_LAST_ERROR=sharedError(e,'Could not connect to the shared database.');
+    renderAll();
+    toast(SUPABASE_AUTH_LAST_ERROR,{kind:'bad',ms:7000});
+  }
+}
+async function logoutAgenda(){
+  const ok=await confirmDialog({title:'Log out?',body:'This signs out the current anonymous Supabase session and returns to profile setup. Your local homework, XP and saved files are not deleted.',ok:'Log out',danger:true});
+  if(!ok)return;
+  try{stopCloudWatchers();if(supabaseClient)await supabaseClient.auth.signOut({scope:'local'});}catch(e){console.error('Supabase sign-out failed:',e);}
+  SUPABASE_AUTH_LAST_ERROR='';
+  SUPABASE_CACHED_USER=null;SUPABASE_AUTH_PROMISE=null;
+  S.student.profileComplete=false;S.student.id='student';S.student.name='';S.student.className='';S.student.isAdmin=false;
+  try{await P.student();}catch(e){}
+  $('#app').hidden=true;
+  $('#boot').hidden=false;
+  showSetup();
+  toast('Logged out');
+}
+
+const ACT={
+  add:t=>openAddChooser({dueDate:t.dataset.date,subjectId:t.dataset.sub}),
+  upload:()=>openUploadFlow(),
+  toggle:t=>{const r=t.getBoundingClientRect();const res=A.toggle(t.dataset.id);if(res)floatXP('+'+res.total+' XP',{getBoundingClientRect:()=>r})},
+  edit:t=>{const h=S.homework.find(x=>x.id===t.dataset.id);if(h)openHWForm({hw:h})},
+  del:async t=>{const h=S.homework.find(x=>x.id===t.dataset.id);if(h&&await confirmDialog({title:'Delete this homework?',body:`\u201C${esc(h.title)}\u201D will be removed. XP you already earned stays in your total.`,ok:'Delete',danger:true})){A.deleteHomework(h.id);toast('Homework deleted')}},
+  qf:t=>{ui.f.quick=t.dataset.k;renderView()},
+  clearf:()=>{ui.f={quick:ui.f.quick,subject:'',priority:'',difficulty:'',date:''};ui.query='';$('#q').value='';renderView()},
+  calprev:()=>{ui.cal.m--;if(ui.cal.m<0){ui.cal.m=11;ui.cal.y--}renderView()},
+  calnext:()=>{ui.cal.m++;if(ui.cal.m>11){ui.cal.m=0;ui.cal.y++}renderView()},
+  caltoday:()=>{const d=new Date();ui.cal={y:d.getFullYear(),m:d.getMonth(),sel:todayStr()};renderView()},
+  calsel:t=>{ui.cal.sel=t.dataset.d;const d=parseYmd(t.dataset.d);ui.cal.y=d.getFullYear();ui.cal.m=d.getMonth();renderView()},
+  gosub:t=>{ui.subTab='all';go('subject/'+t.dataset.id)},
+  gosubs:()=>go('subjects'),
+  subnew:()=>openSubjectForm(),
+  subedit:t=>openSubjectForm(S.subjects.find(s=>s.id===t.dataset.id)),
+  subtab:t=>{ui.subTab=t.dataset.k;renderView()},
+  statm:t=>{ui.stat.metric=t.dataset.k;renderView()},
+  statr:t=>{ui.stat.range=+t.dataset.k;renderView()},
+  bell:()=>toggleNotifs(),
+  cloudretry:()=>retryCloudConnection(),
+  classsync:async t=>{
+    const old=t.textContent;t.disabled=true;t.textContent='Syncing…';
+    try{await syncProfile();await fetchClassPosts();renderView();toast('Class agenda synced')}catch(e){console.error(e);toast(sharedError(e,'Could not sync the class agenda.'),{kind:'bad'})}
+    finally{t.disabled=false;t.innerHTML=ico('refresh',16)+'Sync'}
+  },
+  'claim-admin':async t=>{
+    const code=$('#adminclaimcode')?.value.trim()||'',err=$('#adminclaimerr'),btn=t;
+    if(!code){if(err)err.textContent='Enter the admin code.';return}
+    btn.disabled=true;btn.textContent='Checking…';if(err)err.textContent='';
+    try{
+      const claimed=await cloudClaimAdmin(code);
+      if(!claimed){if(err)err.textContent='Incorrect admin code.';return}
+      const p=await cloudOwnProfile();
+      if(!p||!p.is_admin)throw new Error('The database did not confirm admin access.');
+      S.student.id=p.id;S.student.name=String(p.name||S.student.name).slice(0,40);
+      S.student.className=normalizeClassName(p.class_name||S.student.className).slice(0,40);S.student.isAdmin=true;
+      await P.student();await initClass();renderAll();toast('Admin access enabled');
+    }catch(e){
+      console.error('Admin claim failed:',e);
+      if(err)err.textContent=sharedError(e,'Could not enable admin access.');
+    }finally{btn.disabled=false;btn.textContent='Enable admin'}
+  },
+  logout:()=>logoutAgenda(),
+  readall:()=>{S.notifs.forEach(n=>{if(!n.read){n.read=true;P.notif(n)}});toggleNotifs(true);updateChrome()},
+  theme:()=>{const cur=document.documentElement.getAttribute('data-theme');A.setSetting('theme',cur==='light'?'dark':'light')},
+  'theme-set':t=>A.setSetting('theme',t.dataset.k),
+  more:()=>{const ids=MORE_NAV.filter(([id])=>id!=='students'||S.student.isAdmin);const m=openModal(`${mhead('More')}<div class="mb stack">${ids.map(([id,label])=>`<button class="btn" style="justify-content:flex-start" data-more="${id}">${ico(id==='statistics'?'stats':id,20)}${label}</button>`).join('')}</div>`);
+    m.el.onclick=e=>{const b=e.target.closest('[data-more]');if(b){closeModal(m);go(b.dataset.more)}}},
+  classpost:()=>openClassForm(),
+  classedit:t=>{const p=classPosts().find(x=>x.id===t.dataset.pid);if(p)openClassForm(p)},
+  classdel:async t=>{const p=classPosts().find(x=>x.id===t.dataset.pid);if(!p)return;
+    if(await confirmDialog({title:'Delete this post?',body:`\u201C${esc(p.title)}\u201D will be removed for everyone in the class.`,ok:'Delete',danger:true})){
+      try{await classRemove(p);toast('Post deleted')}catch(e){toast(classError(e),{kind:'bad'})}}},
+  classadd:t=>{const p=classPosts().find(x=>x.id===t.dataset.pid);if(!p)return;
+    const sid=matchSubject(p.subject.name)||S.subjects[0]?.id||'';
+    A.addHomework({type:p.type,subjectId:sid,title:p.title,description:p.description,dueDate:p.dueDate,dueTime:p.dueTime,priority:p.priority,difficulty:p.difficulty,xp:autoXP(p.difficulty),notes:p.notes,classPostId:p.id});
+    toast('Added to your homework')},
+  classimgs:t=>{let paths=[];try{paths=JSON.parse(t.dataset.paths||'[]')}catch(e){paths=t.dataset.path?[t.dataset.path]:[]}viewClassImages(paths)},
+  classf:t=>{if(t.dataset.k==='mine')Class.mine=!Class.mine;else Class.mine=false;renderView()},
+  export:()=>exportBackup(),import:()=>openImport(),reset:()=>resetAll()
+};
+document.addEventListener('click',e=>{
+  const nav=e.target.closest('a[data-go]');
+  if(nav){e.preventDefault();ui.subTab='all';go(nav.dataset.go);return}
+  const t=e.target.closest('[data-act]');if(!t)return;
+  if(t.dataset.act==='edit'&&e.target.closest('.check'))return;
+  const fn=ACT[t.dataset.act];if(fn){e.preventDefault();fn(t,e)}
+});
+document.addEventListener('change',async e=>{
+  const t=e.target;
+  if(t.dataset.classsub!==undefined){Class.subject=t.value;renderView();return}
+  if(t.id==='classinp'){A.setProfile(S.student.name,t.value);return}
+  if(t.dataset.set){
+    const path=t.dataset.set;
+    if(path==='browserNotify'&&t.checked){let ok=false;try{ok=(await Notification.requestPermission())==='granted'}catch(err){}if(!ok){t.checked=false;toast('Browser notifications were blocked. You can allow them in your browser settings.',{kind:'bad',ms:5000});return}}
+    A.setSetting(path,t.checked);return;
+  }
+  if(t.dataset.filter){ui.f[t.dataset.filter]=t.value;renderView()}
+});
+document.addEventListener('input',e=>{
+  if(e.target.id==='peopleq'){ui.peopleQuery=e.target.value;renderView();return}
+  if(e.target.id==='nameinp'){clearTimeout(ui._nt);const v=e.target.value;ui._nt=setTimeout(()=>A.setName(v),350)}
+  
+  if(e.target.dataset&&e.target.dataset.filter==='date'){ui.f.date=e.target.value;renderView()}
+});
+
+/* ----- First-run profile setup ----- */
+function showSetup(){
+  const bootEl=$('#boot');
+  bootEl.innerHTML=`<div class=\"boot-card\" style=\"width:min(460px,calc(100vw - 32px));text-align:left;background:var(--card);border:1px solid var(--line);border-radius:22px;padding:24px;box-shadow:var(--shadow);justify-items:stretch\">
+    <div style=\"display:flex;align-items:center;gap:10px;margin-bottom:18px\"><div class=\"brand\" style=\"padding:0\"><i>✦</i>Agenda</div></div>
+    <h2 style=\"color:var(--text);font-size:28px;margin-bottom:5px\">Set up your profile</h2>
+    <p style=\"color:var(--muted);margin-bottom:18px\">Enter your name and class to get started. Student names are unique across the whole school.</p>
+    <form id=\"setupform\" style=\"display:grid;gap:12px\">
+      <label class=\"field\"><span>Name</span><input class=\"inp\" id=\"setupname\" maxlength=40 placeholder=\"Your name\" required></label>
+      <label class=\"field\"><span>Class</span><select class=\"sel\" id=\"setupclass\" required><option value=\"\" disabled selected>Select your class</option>${ALLOWED_CLASSES.map(c=>`<option value=\"${c}\">${c}</option>`).join('')}</select></label>
+      <label class=\"row\" style=\"cursor:pointer;align-items:center\"><input id=\"setupadmin\" type=\"checkbox\"> <span>I am an admin</span></label>
+      <div id=\"adminwrap\" hidden><label class=\"field\"><span>Admin code</span><input class=\"inp\" id=\"admincode\" inputmode=\"numeric\" autocomplete=\"off\" placeholder=\"Enter admin code\"></label><p id=\"setuperr\" style=\"color:var(--bad);font-size:13px;margin-top:6px\"></p></div>
+      <button class=\"btn primary\" type=\"submit\">Continue</button>
+    </form>
+  </div>`;
+  const f=$('#setupform'),admin=$('#setupadmin'),wrap=$('#adminwrap'),code=$('#admincode'),err=$('#setuperr');
+  admin.onchange=()=>{wrap.hidden=!admin.checked;if(!admin.checked){code.value='';err.textContent=''}};
+  f.onsubmit=async e=>{
+    e.preventDefault();const name=$('#setupname').value.trim(),cls=normalizeClassName($('#setupclass').value);
+    if(!name||!cls){err.textContent='Enter your name and class.';return}
+    const wantsAdmin=admin.checked;
+    /* Admin privileges are verified only by Supabase RPC. Never trust or embed the admin code in client-side authorization logic. */
+    const submit=f.querySelector('button[type="submit"]');submit.disabled=true;submit.textContent='Setting up…';err.textContent='';
+    try{
+      if(SUPABASE_CONFIGURED){
+        const user=await ensureSupabaseUser();
+        if(!user)throw new Error(SUPABASE_AUTH_LAST_ERROR||'The shared database could not create your student session.');
+        const p=await cloudRegisterStudent(name,cls);
+        if(!p)throw new Error('Your profile could not be saved to the shared database.');
+        if(wantsAdmin){
+          const claimed=await cloudClaimAdmin(code.value);
+          if(!claimed)throw new Error('Incorrect admin code.');
+        }
+        const final=await cloudOwnProfile();
+        if(!final)throw new Error('Your shared profile could not be loaded.');
+        S.student.id=final.id;S.student.name=String(final.name||name).slice(0,40);
+        S.student.className=normalizeClassName(final.class_name||cls).slice(0,40);S.student.isAdmin=!!final.is_admin;
+      }else{
+        if(wantsAdmin){err.textContent='The shared database is not configured yet, so admin access cannot be enabled. Add the Supabase URL and publishable key first.';return}
+        if(!S.student.id||S.student.id==='student')S.student.id=uid('student');
+        S.student.isAdmin=false;
+        toast('Saved locally. Shared class features need Supabase configuration.',{kind:'bad',ms:6000});
+      }
+      S.student.name=name.slice(0,40);S.student.className=normalizeClassName(cls).slice(0,40);S.student.profileComplete=true;
+      if(SUPABASE_CONFIGURED){const p=await cloudOwnProfile();if(p){S.student.id=p.id;S.student.name=String(p.name||name).slice(0,40);S.student.className=normalizeClassName(p.class_name||cls).slice(0,40);S.student.isAdmin=!!p.is_admin}}
+      P.student();
+      const hp=location.hash.replace(/^#\/?/,'')||'dashboard';ui.routeStr=hp;ui.route=parseRoute(hp);
+      shell();checkAchievements();refreshReminders();await initClass();
+      $('#boot').remove();$('#app').hidden=false;renderAll();
+    }catch(e2){console.error('Profile setup failed:',e2);err.textContent=sharedError(e2,'Could not complete profile setup. Try again.')}
+    finally{submit.disabled=false;submit.textContent='Continue'}
+  };
+  setTimeout(()=>$('#setupname')?.focus(),30);
+}
+
+/* =====================================================================
+   14. BOOT
+   ===================================================================== */
+async function boot(){
+  Cap.get('downloads');Cap.get('sample');                                  /* warm up optional capabilities */
+  try{
+    await Data.open();
+    try{Data.bc=new BroadcastChannel('school-agenda');Data.bc.onmessage=async()=>{if(Data.pending)return;try{await loadState();renderAll()}catch(e){}}}catch(e){}
+  }catch(e){console.error(e);S.memoryOnly=true;Data.ok=false}
+  try{
+    if(Data.ok)await loadState();
+    else{S.subjects=seedSubjects();applyTheme()}
+  }catch(e){
+    console.error(e);
+    /* Never replace unreadable saved data with blank defaults. */
+    $('#boot').innerHTML=`<div class="boot-card" style="max-width:420px;text-align:center;padding:20px"><h2 style="color:var(--text)">Couldn\u2019t open your saved agenda</h2><p>Your data hasn\u2019t been changed. Close other tabs of this page and reload. If it keeps happening, your browser may be restricting storage.</p><button class="btn primary" onclick="location.reload()">Reload</button></div>`;
+    return;
+  }
+  if(!S.student.profileComplete){showSetup();return}
+  if(SUPABASE_CONFIGURED){
+    try{
+      const user=await ensureSupabaseUser();
+      if(!user){
+        /* Keep personal data usable, but surface the cloud/auth problem instead of silently disabling Class Agenda. */
+        console.warn('Shared cloud authentication is unavailable:',SUPABASE_AUTH_LAST_ERROR);
+      }else{
+        const p=await cloudOwnProfile();
+        if(p){
+          S.student.id=p.id;S.student.name=String(p.name||S.student.name).slice(0,40);
+          S.student.className=normalizeClassName(p.class_name||S.student.className).slice(0,40);
+          S.student.isAdmin=!!p.is_admin;S.student.profileComplete=true;P.student();
+        }
+      }
+    }catch(e){SUPABASE_AUTH_LAST_ERROR=sharedError(e,'Could not restore the shared cloud profile.');console.error('Cloud profile restore failed:',e)}
+  }
+  const hp=location.hash.replace(/^#\/?/,'')||'dashboard';ui.routeStr=hp;ui.route=parseRoute(hp);
+  shell();
+  checkAchievements();refreshReminders();
+  await initClass();
+  $('#boot').remove();$('#app').hidden=false;
+  renderAll();
+  setInterval(()=>{refreshReminders();renderAll()},5*60*1000);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden){refreshReminders();renderAll()}});
+}
+window.__agenda={Class,S,A,Data,levelInfo,xpFor,getStreak,ui,go,checkAchievements};
+boot();
+</script>
+</body>
+</html>
