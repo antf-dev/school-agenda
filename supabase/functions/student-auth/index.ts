@@ -11,7 +11,10 @@ const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,
 const clean=(v:string,max=40)=>String(v||"").trim().replace(/\s+/g," ").slice(0,max);
 const emailFor=(id:string)=>"student-"+id+"@accounts.school-agenda.local";
 Deno.serve(async(req)=>{
- if(req.method==="OPTIONS")return new Response("ok",{headers:cors});
+ if(req.method==="OPTIONS"){
+  const requestedHeaders=req.headers.get("access-control-request-headers");
+  return new Response("ok",{headers:{...cors,...(requestedHeaders?{"Access-Control-Allow-Headers":requestedHeaders}:{}),"Access-Control-Max-Age":"86400","Vary":"Origin, Access-Control-Request-Headers, Access-Control-Request-Method"}});
+ }
  if(req.method!=="POST")return json({ok:false,message:"Method not allowed."},405);
  try{
   const body=await req.json(),action=String(body?.action||"");
@@ -30,16 +33,14 @@ Deno.serve(async(req)=>{
    if(targetError)return json({ok:false,message:"Could not load the selected student."},500);
    if(!target)return json({ok:false,message:"This student account no longer exists."},404);
    if(target.is_admin)return json({ok:false,message:"Administrator accounts cannot be removed from the student directory."},403);
-   const bucket="class-agenda-images",ownedPaths:string[]=[];
-   for(let offset=0;;offset+=1000){
-    const {data:objects,error:objectsError}=await admin.schema("storage").from("objects").select("name").eq("bucket_id",bucket).eq("owner_id",targetId).range(offset,offset+999);
-    if(objectsError)return json({ok:false,message:"Could not check the student's uploaded files; account was not removed."},500);
-    for(const object of objects||[])if(typeof object.name==="string")ownedPaths.push(object.name);
-    if(!objects||objects.length<1000)break;
-   }
-   for(let offset=0;offset<ownedPaths.length;offset+=100){
-    const {error:removeFilesError}=await admin.storage.from(bucket).remove(ownedPaths.slice(offset,offset+100));
-    if(removeFilesError)return json({ok:false,message:"Could not remove the student's uploaded agenda files; account was not removed."},500);
+
+   const caller=createClient(url,publishableKey,{auth:{autoRefreshToken:false,persistSession:false,detectSessionInUrl:false},global:{headers:{Authorization:`Bearer ${token}`}}});
+   const {data:ownedPaths,error:pathsError}=await caller.rpc("admin_list_student_image_paths",{p_student_id:targetId});
+   if(pathsError)return json({ok:false,message:"Could not check the student's uploaded files; account was not removed."},500);
+   const paths=(ownedPaths||[]).filter((path:unknown):path is string=>typeof path==="string"&&path.length>0);
+   for(let offset=0;offset<paths.length;offset+=100){
+    const {error:removeFilesError}=await admin.storage.from("class-agenda-images").remove(paths.slice(offset,offset+100));
+    if(removeFilesError)return json({ok:false,message:"Could not remove the student's uploaded agenda images; account was not removed."},500);
    }
    const {error:deleteError}=await admin.auth.admin.deleteUser(targetId);
    if(deleteError)return json({ok:false,message:"Supabase could not remove this account: "+deleteError.message},500);
