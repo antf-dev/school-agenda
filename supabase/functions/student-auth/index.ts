@@ -23,9 +23,18 @@ Deno.serve(async(req)=>{
    const password=String(body?.password||"");
    if(password.length<8)return json({ok:false,message:"Password must be at least 8 characters."},400);
    const {data:student,error:studentError}=await admin.from("students").select("id").eq("id",userData.user.id).maybeSingle();
-   if(studentError)return json({ok:false,message:"Could not read your student profile: "+studentError.message},500);if(!student)return json({ok:false,message:"Student profile not found."},404);
-   const {error:updateError}=await admin.auth.admin.updateUserById(userData.user.id,{email:emailFor(userData.user.id),password,email_confirm:true});
-   if(updateError)return json({ok:false,message:"Could not save the password: "+updateError.message},500);
+   if(studentError)return json({ok:false,message:"Could not read your student profile: "+studentError.message},500);
+   if(!student)return json({ok:false,message:"Student profile not found."},404);
+   const desiredEmail=emailFor(userData.user.id);
+   const {data:authRow,error:authRowError}=await admin.auth.admin.getUserById(userData.user.id);
+   if(authRowError)return json({ok:false,message:"Could not read your authentication account: "+authRowError.message},500);
+   if(!authRow.user)return json({ok:false,message:"Authentication account not found."},404);
+   if(authRow.user.email!==desiredEmail || authRow.user.is_anonymous){
+    const {error:emailError}=await admin.auth.admin.updateUserById(userData.user.id,{email:desiredEmail,email_confirm:true});
+    if(emailError)return json({ok:false,message:"Could not link the student account: "+emailError.message},500);
+   }
+   const {error:passwordError}=await admin.auth.admin.updateUserById(userData.user.id,{password});
+   if(passwordError)return json({ok:false,message:"Could not set the password: "+passwordError.message},500);
    const {error:flagError}=await admin.from("students").update({has_password:true,updated_at:new Date().toISOString()}).eq("id",userData.user.id);
    if(flagError)return json({ok:false,message:"Could not save your account profile: "+flagError.message},500);
    return json({ok:true});
