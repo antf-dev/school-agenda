@@ -2129,7 +2129,7 @@ function openClassForm(post=null){
   const targetHtml=editing
     ? `<div class="field full"><span>Target class</span><div class="class-target" style="cursor:default"><span>${esc(normalizeClassName(post.className))}</span></div><p class="hint">Editing changes only this class's copy.</p></div>`
     : `<div class="field full"><span>Target classes</span>${Class.isAdmin
-      ? `<div class="class-targets">${ALLOWED_CLASSES.map(cls=>`<label class="class-target"><input type="checkbox" name="targetClass" value="${esc(cls)}" ${cls===currentClass?'checked':''}><span>${esc(cls)}</span></label>`).join('')}</div><p class="hint">Select one or more classes. Each selected class gets its own isolated post and photo copy.</p>`
+      ? `<select class="sel" name="targetClass" multiple size="8" style="min-height:180px">${ALLOWED_CLASSES.map(cls=>`<option value="${esc(cls)}" ${cls===currentClass?'selected':''}>${esc(cls)}</option>`).join('')}</select><p class="hint">Select one or more classes. Hold Ctrl/Cmd to select multiple classes. Each selected class gets its own isolated post and photo copy.</p>`
       : `<div class="class-target" style="cursor:default"><span>${esc(currentClass)}</span></div><input type="hidden" name="targetClass" value="${esc(currentClass)}">`}
       </div>`;
   const m=openModal(`${mhead(editing?'Edit post':'Post to class')}`+`<form class="mb" id="cform" novalidate><div class="fgrid">${targetHtml}
@@ -2151,7 +2151,7 @@ function openClassForm(post=null){
   if(choosePostPhotos&&postPhoto){choosePostPhotos.onclick=()=>{postPhoto.value='';postPhoto.click()};postPhoto.addEventListener('change',()=>{const files=[...postPhoto.files].filter(imageFileSupported);photoHint.textContent=files.length?`${files.length} photo${files.length===1?'':'s'} selected.`:'You can select multiple photos at once.'})}
   form.addEventListener('submit',async e=>{
     e.preventDefault();const f=form.elements,v={type:f.type.value,subjectId:f.subjectId.value,title:f.title.value,description:f.description.value,dueDate:f.dueDate.value,dueTime:f.dueTime.value,priority:f.priority.value,difficulty:f.difficulty.value,notes:f.notes.value};
-    const targets=editing?[normalizeClassName(post.className)]:[...form.querySelectorAll('input[name="targetClass"]:checked')].map(x=>normalizeClassName(x.value)).filter(x=>ALLOWED_CLASSES.includes(x));
+    const targets=editing?[normalizeClassName(post.className)]:[...form.elements.targetClass.selectedOptions].map(x=>normalizeClassName(x.value)).filter(x=>ALLOWED_CLASSES.includes(x));
     const err=!v.title.trim()?'Give it a title.':!parseYmd(v.dueDate)?'Choose a due date.':!targets.length?'Select at least one class.':'';$('#cerr',m.el).textContent=err;if(err)return;
     const btn=$('#csubmit',m.el);btn.disabled=true;btn.textContent=editing?'Saving…':'Posting…';
     try{const files=[...(f.photo?.files||[])].filter(imageFileSupported);if(files.length>10)throw new Error('You can upload up to 10 photos per post.');
