@@ -1495,6 +1495,16 @@ function viewStats(){
 
 /* ----- Admin student directory ----- */
 function viewLeaderboard(){if(!SUPABASE_CONFIGURED)return '<div class="empty"><h3>Leaderboard unavailable</h3><p>The shared database is required for the class leaderboard.</p></div>';if(ui._leaderboardLoading)return '<div class="empty"><h3>Loading leaderboard…</h3></div>';if(ui._leaderboardError)return '<div class="empty"><h3>Could not load the leaderboard</h3><p>'+esc(ui._leaderboardError)+'</p><button class="btn" data-act="leaderboard-refresh">'+ico('refresh',16)+'Try again</button></div>';const rows=ui._leaderboard||[];return '<div class="page-h"><div><h1>Leaderboard</h1><p>Students in '+esc(S.student.className)+', ranked by XP, highest first.</p></div><button class="btn" data-act="leaderboard-refresh">'+ico('refresh',16)+'Refresh</button></div>'+(rows.length?'<section class="card"><div class="stack">'+rows.map((p,i)=>'<div class="set-row" style="display:grid;grid-template-columns:42px 1fr auto;gap:12px;align-items:center;border-top:'+(i?'1px solid var(--line)':'0')+'"><span class="tile sm">'+(i+1)+'</span><div><b>'+esc(p.name)+'</b><small>Level '+(Number(p.level)||1)+' · '+fmtNum(Number(p.total_xp)||0)+' XP'+(p.id===S.student.id?' · You':'')+'</small></div><span class="pill '+(p.id===S.student.id?'xp':'acc')+'">Lv '+(Number(p.level)||1)+'</span></div>').join('')+'</div></section>':'<div class="empty"><h3>No students yet</h3><p>Once students in your class have accounts, they will appear here.</p></div>')}
+function lastActiveLabel(value){
+  if(!value)return'Never';
+  const time=Date.parse(value);if(!Number.isFinite(time))return'Unknown';
+  const seconds=Math.max(0,Math.floor((Date.now()-time)/1000));
+  if(seconds<60)return'Just now';
+  if(seconds<3600)return Math.floor(seconds/60)+' min ago';
+  if(seconds<86400)return Math.floor(seconds/3600)+' hr ago';
+  if(seconds<1209600)return Math.floor(seconds/86400)+' days ago';
+  return new Date(time).toLocaleDateString();
+}
 function viewStudents(){
   if(!S.student.isAdmin){return`<div class="empty"><h3>Admin access required</h3><p>This page is only available to admin profiles.</p></div>`}
   const q=String(ui.peopleQuery||'').trim().toLowerCase();
@@ -2021,9 +2031,14 @@ async function fetchStudents(){
   Class.people=(data||[]).map(p=>({
     id:p.id,name:String(p.name||'').slice(0,40),className:String(p.class_name||'').slice(0,40),
     classKey:String(p.class_key||''),isAdmin:!!p.is_admin,hasPassword:!!p.has_password,
-    level:Number(p.level||1),totalXP:Number(p.total_xp||0),createdAt:p.created_at,updatedAt:p.updated_at
+    level:Number(p.level||1),totalXP:Number(p.total_xp||0),createdAt:p.created_at,updatedAt:p.updated_at,lastActiveAt:p.last_active_at
   }));
   Class.peopleStatus='ready';return true;
+}
+async function cloudRecordStudentActivity(){
+  if(!supabaseClient)return;
+  const {error}=await supabaseClient.rpc('record_student_activity');
+  if(error)throw error;
 }
 async function cloudAdminSetStudentClass(studentId,className){
   if(!supabaseClient||!S.student.isAdmin)throw new Error('Administrator access is required.');
@@ -2103,6 +2118,7 @@ async function initClass(){
       await fetchClassPosts();
     }
     Class.status='ready';
+    try{await cloudRecordStudentActivity()}catch(e){console.warn('Could not record student activity:',e)}
     if(S.student.isAdmin){try{Class.peopleStatus='loading';await fetchStudents()}catch(e){Class.peopleStatus='error';console.error('Could not load student directory:',e)}}
     else{Class.people=[];Class.peopleStatus='off'}
     startCloudWatchers();
