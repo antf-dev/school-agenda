@@ -191,6 +191,7 @@ a{color:inherit;text-decoration:none}
 .chip{border:1px solid var(--line);background:var(--card);padding:6px 13px;border-radius:99px;font-weight:600;font-size:13.5px;color:var(--muted)}
 .chip.on{background:var(--accent);color:var(--accent-ink);border-color:transparent}
 .filters{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 16px}
+.class-targets{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.class-target{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--line);background:var(--bg2);border-radius:12px;cursor:pointer;font-weight:600}.class-target:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}.class-target input{accent-color:var(--accent);width:17px;height:17px}@media(max-width:600px){.class-targets{grid-template-columns:1fr}.class-target{min-height:44px}}
 .sel,.inp,.txt{background:var(--bg2);border:1px solid var(--line2);border-radius:12px;padding:9px 11px;outline:0;width:100%;min-width:0}
 .sel:focus,.inp:focus,.txt:focus{border-color:var(--accent)}
 .filters .sel,.filters .inp{width:auto}
@@ -536,7 +537,7 @@ let SUPABASE_AUTH_LAST_ERROR='';
 function sharedError(e,fallback='Shared data could not be loaded.'){
   const raw=String(e?.message||e?.details||e?.hint||SUPABASE_AUTH_LAST_ERROR||'').trim();
   if(e?.code==='23505'||/already in use|duplicate.*name|name.*already.*used/i.test(raw)){
-    return 'That name is already in use. Please choose a different name.';
+    return 'That name is already used. Please choose a different name.';
   }
   return raw||fallback;
 }
@@ -1998,39 +1999,26 @@ function imagePathList(post){
   if(a.length)return [...new Set(a)];
   return post?.imagePath?[String(post.imagePath)]:[];
 }
-async function classCreate(d,shareImage=null,imagePathOverride=null){
-  if(!supabaseClient)throw{code:'not_configured'};
-  /* Never silently fall back to local-only storage. Re-establish the current
-     cloud account/class before every shared write. */
-  await ensureClassCloudReady();
-  const id=sharedUuid();
-  const override=Array.isArray(imagePathOverride)?imagePathOverride.filter(Boolean).map(String):(imagePathOverride?[String(imagePathOverride)]:[]);
+async function classCreate(d,shareImage=null,imagePathOverride=null,targetClassName=null){
+  if(!supabaseClient)throw{code:'not_configured'}; await ensureClassCloudReady();
+  const target=normalizeClassName(targetClassName||Class.className).slice(0,40);
+  if(!ALLOWED_CLASSES.includes(target))throw new Error('Please choose a valid class.');
+  const targetKey=classKey(target),id=sharedUuid();
   const incoming=Array.isArray(shareImage)?shareImage.filter(Boolean):(shareImage?[shareImage]:[]);
-  let imagePaths=override.slice();
+  let imagePaths=Array.isArray(imagePathOverride)?imagePathOverride.filter(Boolean).map(String):(imagePathOverride?[String(imagePathOverride)]:[]);
   try{
-    /* Upload images BEFORE creating the post. The old flow inserted the post,
-       then issued a second UPDATE just to attach image paths. That extra UPDATE
-       was the operation triggering the shared-post permission policy. */
-    if(incoming.length){
-      imagePaths=[];
-      for(let i=0;i<incoming.length;i++){
-        const path=`${Class.classKey}/${Class.me}/post-${id}-${i+1}.jpg`;
-        await cloudUploadImage(incoming[i],path);
-        imagePaths.push(path);
-      }
-    }
-    const payload=sharedPostPayload(d,id,imagePaths[0]||null);
-    payload.image_paths=imagePaths;
-    const ins=await supabaseClient.from('class_agenda_posts').insert(payload).select('*').single();
-    if(ins.error)throw ins.error;
-    await fetchClassPosts();
-    if(ui.route.name==='class'||ui.route.name==='agenda')renderView();
-    return{id,imagePath:imagePaths[0]||null,imagePaths};
-  }catch(e){
-    for(const path of imagePaths){try{await cloudDeleteImage(path)}catch(_) {}}
-    throw e;
-  }
+    if(incoming.length){imagePaths=[];for(let i=0;i<incoming.length;i++){const path=targetKey+'/'+Class.me+'/post-'+id+'-'+(i+1)+'.jpg';await cloudUploadImage(incoming[i],path);imagePaths.push(path)}}
+    const s=subj(d.subjectId);
+    const {data,error}=await supabaseClient.rpc('create_class_agenda_post',{
+      p_id:id,p_target_class_name:target,p_subject_name:s.name,p_subject_icon:s.icon,p_subject_accent:s.accent,
+      p_type:TYPES[d.type]?d.type:'homework',p_title:clip(String(d.title||'').trim(),160),p_description:clip(d.description,600),
+      p_due_date:d.dueDate||null,p_due_time:d.dueTime||null,p_priority:PRIO[d.priority]?d.priority:'medium',
+      p_difficulty:DIFF[d.difficulty]?d.difficulty:'medium',p_notes:clip(d.notes,600),p_image_paths:imagePaths});
+    if(error||!data)throw error||new Error('The shared post could not be created.');
+    await fetchClassPosts();if(ui.route.name==='class'||ui.route.name==='agenda')renderView();return{id,imagePath:imagePaths[0]||null,imagePaths,targetClass:target};
+  }catch(e){for(const path of imagePaths){try{await cloudDeleteImage(path)}catch(_){}}throw e;}
 }
+
 
 async function classUpdate(post,d,{newImage,removeImage}={}){
   if(!supabaseClient)throw{code:'not_configured'};
@@ -2134,11 +2122,17 @@ function viewClass(){
    ${posts.length?`<div class="hwlist">${posts.map(postCard).join('')}</div>`:`<div class="empty"><h3>No posts yet</h3><p>${canPost?'Post an assignment or an agenda photo for the whole class.':'Nothing has been posted yet.'}</p>${canPost?`<div class="row"><button class="btn primary" data-act="classpost">${ico('plus',18)}Post to class</button></div>`:''}</div>`}`;
 }
 function openClassForm(post=null){
-  const editing=!!post;
-  const sid=post?(matchSubject(post.subject.name)||S.subjects[0]?.id):(S.subjects[0]?.id||'');
+  const editing=!!post,sid=post?(matchSubject(post.subject.name)||S.subjects[0]?.id):(S.subjects[0]?.id||'');
   const d=post||{type:'homework',title:'',description:'',dueDate:addDays(todayStr(),1),dueTime:'',priority:'medium',difficulty:'medium',notes:''};
   const opt=(o,sel)=>Object.entries(o).map(([k,v])=>`<option value="${k}" ${k===sel?'selected':''}>${v.label||v}</option>`).join('');
-  const m=openModal(`${mhead(editing?'Edit post':'Post to class')}<form class="mb" id="cform" novalidate><div class="fgrid">
+  const currentClass=normalizeClassName(S.student.className);
+  const targetHtml=editing
+    ? `<div class="field full"><span>Target class</span><div class="class-target" style="cursor:default"><span>${esc(normalizeClassName(post.className))}</span></div><p class="hint">Editing changes only this class's copy.</p></div>`
+    : `<div class="field full"><span>Target classes</span>${Class.isAdmin
+      ? `<div class="class-targets">${ALLOWED_CLASSES.map(cls=>`<label class="class-target"><input type="checkbox" name="targetClass" value="${esc(cls)}" ${cls===currentClass?'checked':''}><span>${esc(cls)}</span></label>`).join('')}</div><p class="hint">Select one or more classes. Each selected class gets its own isolated post and photo copy.</p>`
+      : `<div class="class-target" style="cursor:default"><span>${esc(currentClass)}</span></div><input type="hidden" name="targetClass" value="${esc(currentClass)}">`}
+      </div>`;
+  const m=openModal(`${mhead(editing?'Edit post':'Post to class')}`+`<form class="mb" id="cform" novalidate><div class="fgrid">${targetHtml}
     <label class="field"><span>Subject</span><select class="sel" name="subjectId">${subjectOptions(sid)}</select></label>
     <label class="field"><span>Type</span><select class="sel" name="type">${opt(TYPES,d.type)}</select></label>
     <label class="field full"><span>Title</span><input class="inp" name="title" maxlength="160" value="${esc(d.title)}" placeholder="Exercises 12–20"></label>
@@ -2151,33 +2145,23 @@ function openClassForm(post=null){
     <div class="field full"><span>Agenda photos (optional)</span><button type="button" class="btn sm" id="choosepostphotos">${ico('image',14)}Choose photos</button><input type="file" name="photo" id="postphoto" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple hidden><span class="hint" id="photohint">You can select multiple photos at once.</span>
       ${editing&&imagePathList(post).length?`<label class="row" style="cursor:pointer"><input type="checkbox" name="rmphoto"> <span>Remove the current photo(s)</span></label>`:''}</div>
     <p id="cerr" style="color:var(--bad);font-size:13.5px;grid-column:1/-1" role="alert"></p></div>
-    <p class="hint">Everyone with access to this page will see this post.</p>
-    <div class="mf" style="padding:8px 0 0"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn primary" id="csubmit">${editing?'Save changes':'Post to class'}</button></div></form>`,{cls:'wide',locked:true});
-  const form=m.el.querySelector('#cform');
-  const postPhoto=m.el.querySelector('#postphoto');
-  const choosePostPhotos=m.el.querySelector('#choosepostphotos');
-  const photoHint=m.el.querySelector('#photohint');
-  if(choosePostPhotos&&postPhoto){
-    choosePostPhotos.onclick=()=>{postPhoto.value='';postPhoto.click()};
-    postPhoto.addEventListener('change',()=>{
-      const files=[...postPhoto.files].filter(imageFileSupported);
-      photoHint.textContent=files.length?`${files.length} photo${files.length===1?'':'s'} selected.`:'You can select multiple photos at once.';
-    });
-  }
+    <p class="hint">Shared posts are visible only to students in their target class.</p>
+    <div class="mf" style="padding:8px 0 0"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn primary" id="csubmit">${editing?'Save changes':'Post to selected class(es)'}</button></div></form>`,{cls:'wide',locked:true});
+  const form=m.el.querySelector('#cform'),postPhoto=m.el.querySelector('#postphoto'),choosePostPhotos=m.el.querySelector('#choosepostphotos'),photoHint=m.el.querySelector('#photohint');
+  if(choosePostPhotos&&postPhoto){choosePostPhotos.onclick=()=>{postPhoto.value='';postPhoto.click()};postPhoto.addEventListener('change',()=>{const files=[...postPhoto.files].filter(imageFileSupported);photoHint.textContent=files.length?`${files.length} photo${files.length===1?'':'s'} selected.`:'You can select multiple photos at once.'})}
   form.addEventListener('submit',async e=>{
     e.preventDefault();const f=form.elements,v={type:f.type.value,subjectId:f.subjectId.value,title:f.title.value,description:f.description.value,dueDate:f.dueDate.value,dueTime:f.dueTime.value,priority:f.priority.value,difficulty:f.difficulty.value,notes:f.notes.value};
-    const err=!v.title.trim()?'Give it a title.':!parseYmd(v.dueDate)?'Choose a due date.':'';$('#cerr',m.el).textContent=err;if(err)return;
-    const btn=$('#csubmit',m.el);btn.disabled=true;btn.textContent='Posting…';
-    try{
-      const files=[...(f.photo?.files||[])].filter(imageFileSupported);
-      if(files.length>10)throw new Error('You can upload up to 10 photos per post.');
-      /* Upload the original File objects directly for Class Agenda. This avoids
-         browser canvas conversion entirely and is more reliable for large/mobile photos. */
-      if(editing)await classUpdate(post,v,{newImage:files,removeImage:!!(f.rmphoto&&f.rmphoto.checked)});else await classCreate(v,files);
-      closeModal(m);toast(editing?'Post updated':'Posted to the class agenda');
-    }catch(e2){$('#cerr',m.el).textContent=classError(e2);btn.disabled=false;btn.textContent=editing?'Save changes':'Post to class'}
+    const targets=editing?[normalizeClassName(post.className)]:[...form.querySelectorAll('input[name="targetClass"]:checked')].map(x=>normalizeClassName(x.value)).filter(x=>ALLOWED_CLASSES.includes(x));
+    const err=!v.title.trim()?'Give it a title.':!parseYmd(v.dueDate)?'Choose a due date.':!targets.length?'Select at least one class.':'';$('#cerr',m.el).textContent=err;if(err)return;
+    const btn=$('#csubmit',m.el);btn.disabled=true;btn.textContent=editing?'Saving…':'Posting…';
+    try{const files=[...(f.photo?.files||[])].filter(imageFileSupported);if(files.length>10)throw new Error('You can upload up to 10 photos per post.');
+      if(editing)await classUpdate(post,v,{newImage:files,removeImage:!!(f.rmphoto&&f.rmphoto.checked)});else for(const target of targets)await classCreate(v,files,null,target);
+      closeModal(m);toast(editing?'Post updated':`Posted to ${targets.length} class${targets.length===1?'':'es'}`);
+    }catch(e2){$('#cerr',m.el).textContent=classError(e2);btn.disabled=false;btn.textContent=editing?'Save changes':'Post to selected class(es)'}
   });
 }
+
+
 
 /* =====================================================================
    13. EVENTS
@@ -2311,17 +2295,14 @@ function showSetup(){
     <form id=\"setupform\" style=\"display:grid;gap:12px\">
       <label class=\"field\"><span>Name</span><input class=\"inp\" id=\"setupname\" maxlength=40 placeholder=\"Your name\" required></label>
       <label class=\"field\"><span>Class</span><select class=\"sel\" id=\"setupclass\" required><option value=\"\" disabled selected>Select your class</option>${ALLOWED_CLASSES.map(c=>`<option value=\"${c}\">${c}</option>`).join('')}</select></label>
-      <label class=\"row\" style=\"cursor:pointer;align-items:center\"><input id=\"setupadmin\" type=\"checkbox\"> <span>I am an admin</span></label>
-      <div id=\"adminwrap\" hidden><label class=\"field\"><span>Admin code</span><input class=\"inp\" id=\"admincode\" inputmode=\"numeric\" autocomplete=\"off\" placeholder=\"Enter admin code\"></label><p id=\"setuperr\" style=\"color:var(--bad);font-size:13px;margin-top:6px\"></p></div>
+      <p id=\"setuperr\" style=\"color:var(--bad);font-size:13px;margin-top:2px\" role=\"alert\"></p>
       <button class=\"btn primary\" type=\"submit\">Continue</button>
     </form>
   </div>`;
-  const f=$('#setupform'),admin=$('#setupadmin'),wrap=$('#adminwrap'),code=$('#admincode'),err=$('#setuperr');
-  admin.onchange=()=>{wrap.hidden=!admin.checked;if(!admin.checked){code.value='';err.textContent=''}};
+  const f=$('#setupform'),err=$('#setuperr');
   f.onsubmit=async e=>{
     e.preventDefault();const name=$('#setupname').value.trim(),cls=normalizeClassName($('#setupclass').value);
     if(!name||!cls){err.textContent='Enter your name and class.';return}
-    const wantsAdmin=admin.checked;
     /* Admin privileges are verified only by Supabase RPC. Never trust or embed the admin code in client-side authorization logic. */
     const submit=f.querySelector('button[type="submit"]');submit.disabled=true;submit.textContent='Setting up…';err.textContent='';
     try{
@@ -2330,16 +2311,11 @@ function showSetup(){
         if(!user)throw new Error(SUPABASE_AUTH_LAST_ERROR||'The shared database could not create your student session.');
         const p=await cloudRegisterStudent(name,cls);
         if(!p)throw new Error('Your profile could not be saved to the shared database.');
-        if(wantsAdmin){
-          const claimed=await cloudClaimAdmin(code.value);
-          if(!claimed)throw new Error('Incorrect admin code.');
-        }
         const final=await cloudOwnProfile();
         if(!final)throw new Error('Your shared profile could not be loaded.');
         S.student.id=final.id;S.student.name=String(final.name||name).slice(0,40);
         S.student.className=normalizeClassName(final.class_name||cls).slice(0,40);S.student.isAdmin=!!final.is_admin;
       }else{
-        if(wantsAdmin){err.textContent='The shared database is not configured yet, so admin access cannot be enabled. Add the Supabase URL and publishable key first.';return}
         if(!S.student.id||S.student.id==='student')S.student.id=uid('student');
         S.student.isAdmin=false;
         toast('Saved locally. Shared class features need Supabase configuration.',{kind:'bad',ms:6000});
