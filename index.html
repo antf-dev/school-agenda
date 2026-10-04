@@ -591,7 +591,7 @@ let SUPABASE_AUTH_LAST_ERROR='';
 function sharedError(e,fallback='Shared data could not be loaded.'){
   const raw=String(e?.message||e?.details||e?.hint||SUPABASE_AUTH_LAST_ERROR||'').trim();
   if(e?.code==='23505'||/already in use|duplicate.*name|name.*already.*used/i.test(raw)){
-    return 'That name is already used. Please choose a different name.';
+    return '';
   }
   return raw||fallback;
 }
@@ -2345,7 +2345,7 @@ function showSetup(){
   bootEl.innerHTML=`<div class=\"boot-card\" style=\"width:min(460px,calc(100vw - 32px));text-align:left;background:var(--card);border:1px solid var(--line);border-radius:22px;padding:24px;box-shadow:var(--shadow);justify-items:stretch\">
     <div style=\"display:flex;align-items:center;gap:10px;margin-bottom:18px\"><div class=\"brand\" style=\"padding:0\"><i>✦</i>Agenda</div></div>
     <h2 style=\"color:var(--text);font-size:28px;margin-bottom:5px\">Set up your profile</h2>
-    <p style=\"color:var(--muted);margin-bottom:18px\">Enter your name and class to get started. Student names are unique across the whole school.</p>
+    <p style=\"color:var(--muted);margin-bottom:18px\">Enter your name and class to get started. You can use any name.</p>
     <form id=\"setupform\" style=\"display:grid;gap:12px\">
       <label class=\"field\"><span>Name</span><input class=\"inp\" id=\"setupname\" maxlength=40 placeholder=\"Your name\" required></label>
       <label class=\"field\"><span>Class</span><select class=\"sel\" id=\"setupclass\" required><option value=\"\" disabled selected>Select your class</option>${ALLOWED_CLASSES.map(c=>`<option value=\"${c}\">${c}</option>`).join('')}</select></label>
