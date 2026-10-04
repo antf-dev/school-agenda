@@ -2237,7 +2237,10 @@ function openClassForm(post=null){
   if(choosePostPhotos&&postPhoto){choosePostPhotos.onclick=()=>{postPhoto.value='';postPhoto.click()};postPhoto.addEventListener('change',()=>{const files=[...postPhoto.files],valid=files.filter(f=>imageFileSupported(f)&&Number(f.size)<=MAX_AGENDA_IMAGE_BYTES),skipped=files.length-valid.length;photoHint.textContent=valid.length?`${valid.length} photo${valid.length===1?'':'s'} selected.${skipped?` ${skipped} unsupported or over 20 MB; reselect smaller supported images.`:''}`:'No photos selected. Choose browser-readable image files up to 20 MB.';photoHint.style.color=skipped?'var(--bad)':''})}
   form.addEventListener('submit',async e=>{
     e.preventDefault();const f=form.elements,v={type:f.type.value,subjectId:f.subjectId.value,title:f.title.value,description:f.description.value,dueDate:f.dueDate.value,dueTime:f.dueTime.value,priority:f.priority.value,difficulty:f.difficulty.value,notes:f.notes.value};
-    const targets=editing?[normalizeClassName(post.className)]:[...form.elements.targetClass.selectedOptions].map(x=>normalizeClassName(x.value)).filter(x=>ALLOWED_CLASSES.includes(x));
+    const targetField=form.elements.targetClass;
+    const targets=editing?[normalizeClassName(post.className)]:targetField?.selectedOptions
+      ? [...targetField.selectedOptions].map(x=>normalizeClassName(x.value)).filter(x=>ALLOWED_CLASSES.includes(x))
+      : [normalizeClassName(targetField?.value||'')].filter(x=>ALLOWED_CLASSES.includes(x));
     const err=!v.title.trim()?'Give it a title.':!parseYmd(v.dueDate)?'Choose a due date.':!targets.length?'Select at least one class.':'';$('#cerr',m.el).textContent=err;if(err)return;
     const btn=$('#csubmit',m.el);btn.disabled=true;btn.textContent=editing?'Saving…':'Posting…';
     try{const selected=[...(f.photo?.files||[])];if(selected.length>10)throw new Error('You can upload up to 10 photos per post.');if(selected.some(file=>!imageFileSupported(file)))throw new Error('One or more selected files are not supported images. Choose a readable photo from your device or Files app.');if(selected.some(file=>Number(file.size)>MAX_AGENDA_IMAGE_BYTES))throw new Error('Each photo must be 20 MB or smaller. Choose smaller images and try again.');const files=selected;
