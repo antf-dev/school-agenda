@@ -470,6 +470,7 @@ const clamp=(n,a,b)=>Math.min(b,Math.max(a,n));
    2. ICONS
    ===================================================================== */
 const ICONS={
+ leaderboard:'<path d="M8 21h8M12 17v4M7 4h10v7a5 5 0 0 1-10 0zM7 7H4v2a4 4 0 0 0 4 4M17 7h3v2a4 4 0 0 0-4 4"/>',
  dashboard:'<rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/>',
  agenda:'<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
  homework:'<rect x="3" y="3" width="18" height="18" rx="5"/><path d="m8 12 3 3 5-6"/>',
@@ -1171,7 +1172,7 @@ Reply with only JSON in exactly this shape:
    11. UI STATE, ROUTER, RENDERING
    ===================================================================== */
 const ui={route:{name:'dashboard',arg:''},routeStr:'dashboard',query:'',f:{quick:'all',subject:'',priority:'',difficulty:'',date:''},
-  cal:{y:new Date().getFullYear(),m:new Date().getMonth(),sel:todayStr()},bars:{},stat:{metric:'tasks',range:14},subTab:'all',notifOpen:false,saveState:'saved'};
+  agendaDateFrom:'',agendaDateTo:'',cal:{y:new Date().getFullYear(),m:new Date().getMonth(),sel:todayStr()},bars:{},stat:{metric:'tasks',range:14},subTab:'all',notifOpen:false,saveState:'saved'};
 
 function parseRoute(p){const [name,arg]=String(p||'').replace(/^#?\/?/,'').split('/');
   const ok=['dashboard','agenda','class','homework','calendar','subjects','subject','achievements','leaderboard','statistics','students','settings'];
@@ -1189,9 +1190,9 @@ function applyTheme(){
   try{localStorage.setItem('agenda-theme',t)}catch(e){}
 }
 
-const NAV=[['dashboard','Dashboard'],['agenda','Agenda'],['homework','Homework'],['calendar','Calendar']];
+const NAV=[['dashboard','Dashboard'],['agenda','Agenda'],['homework','Homework'],['leaderboard','Leaderboard']];
 /* Primary Agenda is the public class agenda; legacy #/class remains an alias. */
-const MORE_NAV=[['subjects','Subjects'],['achievements','Achievements'],['leaderboard','Leaderboard'],['statistics','Statistics'],['settings','Settings'],['students','Students']];
+const MORE_NAV=[['subjects','Subjects'],['achievements','Achievements'],['calendar','Calendar'],['statistics','Statistics'],['settings','Settings'],['students','Students']];
 const navKey=()=>{if(ui.route.name==='subject')return'subjects';if(ui.route.name==='class'||ui.route.name==='agenda')return'agenda';return ui.route.name};
 
 function shell(){
@@ -1225,7 +1226,7 @@ function updateChrome(){
   const over=S.homework.filter(h=>statusOf(h)==='overdue').length,k=navKey();
   $('#sidenav').innerHTML=NAV.map(([id,l])=>`<a href="#/${id}" data-go="${id}" class="${k===id?'on':''}">${ico(id==='statistics'?'stats':id,20)}${l}${id==='homework'&&over?`<span class="badge">${over}</span>`:''}</a>`).join('')+
     `<button data-act="more" class="${MORE_NAV.some(([id])=>id===k)?'on':''}">${ico('more',20)}More</button>`;
-  const bn=[['dashboard','Home'],['agenda','Agenda'],['homework','Homework'],['calendar','Calendar']];
+  const bn=[['dashboard','Home'],['agenda','Agenda'],['homework','Homework'],['leaderboard','Leaderboard']];
   $('#bottomnav').innerHTML=bn.map(([id,l])=>`<a href="#/${id}" data-go="${id}" class="${k===id?'on':''}">${ico(id==='statistics'?'stats':id,22)}${l}${id==='homework'&&over?`<span class="badge">${over}</span>`:''}</a>`).join('')+
     `<button data-act="more" class="${MORE_NAV.some(([id])=>id===k)?'on':''}">${ico('more',22)}More</button>`;
   const li=levelInfo(S.student.totalXP);
@@ -2275,10 +2276,13 @@ function viewClass(){
   if(Class.status==='loading')return head+`<div class="empty"><p>Loading the class agenda…</p></div>`;
   if(Class.status==='off')return head+`<div class="empty"><h3>Public class agenda unavailable</h3><p>The shared class agenda needs the shared database connection. Your private homework still works normally.</p></div>`;
   if(Class.status==='error')return head+`<div class="empty"><h3>Couldn\u2019t load the public class agenda</h3><p>${esc(Class.lastError||'Check your connection and reload the page.')}</p></div>`;
+  const dateFilterActive=Boolean(ui.agendaDateFrom||ui.agendaDateTo);
   let posts=classPosts();
   const subs=[...new Set(posts.map(p=>p.subject.name))].sort();
   if(Class.mine)posts=posts.filter(p=>p.ownerId===Class.me);
   if(Class.subject)posts=posts.filter(p=>p.subject.name===Class.subject);
+  if(ui.agendaDateFrom)posts=posts.filter(p=>p.dueDate&&p.dueDate>=ui.agendaDateFrom);
+  if(ui.agendaDateTo)posts=posts.filter(p=>p.dueDate&&p.dueDate<=ui.agendaDateTo);
   const q=ui.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   if(q.length)posts=posts.filter(p=>{const hay=[p.title,p.description,p.notes,p.subject.name,p.dueDate].join(' ').toLowerCase();return q.every(w=>hay.includes(w))});
   const notes=[];
@@ -2288,8 +2292,11 @@ function viewClass(){
   notes.push('Shared photos are automatically compressed and removed after their due date. Your personal homework, XP and streak stay private on your device.');
   return head+`<div class="note">${notes.map(esc).join(' ')}</div>
    <div class="row wrap" style="margin-bottom:14px"><div class="chips"><button class="chip ${!Class.mine?'on':''}" data-act="classf" data-k="all">Everyone</button><button class="chip ${Class.mine?'on':''}" data-act="classf" data-k="mine">My posts</button></div>
-    <select class="sel" style="width:auto" data-classsub aria-label="Subject"><option value="">All subjects</option>${subs.map(n=>`<option ${Class.subject===n?'selected':''}>${esc(n)}</option>`).join('')}</select></div>
-   ${posts.length?`<div class="hwlist">${posts.map(postCard).join('')}</div>`:`<div class="empty"><h3>No posts yet</h3><p>${canPost?'Post an assignment or an agenda photo for the whole class.':'Nothing has been posted yet.'}</p>${canPost?`<div class="row"><button class="btn primary" data-act="classpost">${ico('plus',18)}Post to class</button></div>`:''}</div>`}`;
+    <select class="sel" style="width:auto" data-classsub aria-label="Subject"><option value="">All subjects</option>${subs.map(n=>`<option ${Class.subject===n?'selected':''}>${esc(n)}</option>`).join('')}</select>
+    <label class="field" style="flex:1;min-width:145px;max-width:210px"><span>Due from</span><input class="inp" type="date" data-agenda-date="from" value="${esc(ui.agendaDateFrom)}" ${ui.agendaDateTo?`max="${esc(ui.agendaDateTo)}"`:''} aria-label="Due date from"></label>
+    <label class="field" style="flex:1;min-width:145px;max-width:210px"><span>Due through</span><input class="inp" type="date" data-agenda-date="to" value="${esc(ui.agendaDateTo)}" ${ui.agendaDateFrom?`min="${esc(ui.agendaDateFrom)}"`:''} aria-label="Due date through"></label>
+    ${dateFilterActive?`<button class="btn sm" data-act="agenda-dates-clear">Clear dates</button>`:''}</div>
+   ${posts.length?`<div class="hwlist">${posts.map(postCard).join('')}</div>`:`<div class="empty"><h3>${dateFilterActive?'No posts in this date range':'No posts yet'}</h3><p>${canPost?'Post an assignment or an agenda photo for the whole class.':'Nothing has been posted yet.'}</p>${canPost?`<div class="row"><button class="btn primary" data-act="classpost">${ico('plus',18)}Post to class</button></div>`:''}</div>`}`;
 }
 function openClassForm(post=null){
   const editing=!!post,sid=post?(matchSubject(post.subject.name)||S.subjects[0]?.id):(S.subjects[0]?.id||'');
@@ -2443,6 +2450,7 @@ const ACT={
     toast('Added to your homework')},
   classimgs:t=>{let paths=[];try{paths=JSON.parse(t.dataset.paths||'[]')}catch(e){paths=t.dataset.path?[t.dataset.path]:[]}viewClassImages(paths)},
   classf:t=>{if(t.dataset.k==='mine')Class.mine=!Class.mine;else Class.mine=false;renderView()},
+  'agenda-dates-clear':()=>{ui.agendaDateFrom='';ui.agendaDateTo='';renderView()},
   export:()=>exportBackup(),import:()=>openImport(),reset:()=>resetAll()
 };
 document.addEventListener('click',e=>{
@@ -2454,6 +2462,7 @@ document.addEventListener('click',e=>{
 });
 document.addEventListener('change',async e=>{
   const t=e.target;
+  if(t.dataset.agendaDate){if(t.dataset.agendaDate==='from')ui.agendaDateFrom=t.value;else ui.agendaDateTo=t.value;renderView();return}
   if(t.dataset.classsub!==undefined){Class.subject=t.value;renderView();return}
   if(t.id==='classinp'){A.setProfile(S.student.name,t.value);return}
   if(t.id==='peopleclass'){ui.peopleClass=t.value;updateStudentDirectoryResults();return}
