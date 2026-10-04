@@ -600,8 +600,8 @@ function sharedUuid(){try{return crypto.randomUUID()}catch(e){return uid('uuid')
 let SUPABASE_AUTH_LAST_ERROR='';
 function sharedError(e,fallback='Shared data could not be loaded.'){
   const raw=String(e?.message||e?.details||e?.hint||SUPABASE_AUTH_LAST_ERROR||'').trim();
-  if(e?.code==='23505'||/already in use|duplicate.*name|name.*already.*used/i.test(raw)){
-    return 'An account with these details may already exist. Try logging in, or ask your teacher to check the student list.';
+  if(e?.code==='23505'||/already in use|already exist|already registered|duplicate.*name|name.*already.*used/i.test(raw)){
+    return 'You already have an account. Go to sign in.';
   }
   return raw||fallback;
 }
@@ -660,7 +660,20 @@ async function studentAuth(action,body={}){if(!SUPABASE_CONFIGURED||!supabaseCli
 async function cloudSetPassword(password){const user=await ensureSupabaseUser();if(!user)throw new Error(SUPABASE_AUTH_LAST_ERROR||'No active student session.');if(String(password||'').length<8)throw new Error('Password must be at least 8 characters.');await studentAuth('set-password',{password});S.student.hasPassword=true;P.student();return true}
 async function cloudLogin(name,className,password){const data=await studentAuth('login',{name,className,password});if(!data.session?.access_token||!data.session?.refresh_token)throw new Error('The login response was incomplete.');const {error}=await supabaseClient.auth.setSession({access_token:data.session.access_token,refresh_token:data.session.refresh_token});if(error)throw error;SUPABASE_CACHED_USER=(await supabaseClient.auth.getUser()).data.user||null;return data.profile||null}
 async function cloudSyncProgress(){if(!supabaseClient||!S.student.profileComplete||!S.student.id||S.student.id==='student')return null;try{const {data,error}=await supabaseClient.rpc('update_student_progress',{p_total_xp:Math.max(0,Math.floor(Number(S.student.totalXP)||0)),p_level:levelInfo(S.student.totalXP).level});if(error)throw error;return data||null}catch(e){console.warn('Could not sync student progress:',e);return null}}
-async function cloudLeaderboard(){if(!supabaseClient)return [];const {data,error}=await supabaseClient.rpc('get_class_leaderboard');if(error)throw error;return Array.isArray(data)?data:[]}
+async function cloudLeaderboard(){
+  if(!supabaseClient)return [];
+  const user=await ensureSupabaseUser();if(!user)throw new Error(SUPABASE_AUTH_LAST_ERROR||'Could not connect to the student account.');
+  let profile=await cloudOwnProfile(user);
+  if(!profile&&S.student.profileComplete)profile=await cloudRegisterStudent(S.student.name,S.student.className,user);
+  if(profile){
+    S.student.id=profile.id;S.student.name=String(profile.name||S.student.name).slice(0,40);
+    S.student.className=normalizeClassName(profile.class_name||S.student.className).slice(0,40);
+    S.student.isAdmin=!!profile.is_admin;S.student.profileComplete=true;await P.student();
+    Class.me=profile.id;Class.className=S.student.className;Class.classKey=classKey(Class.className);Class.isAdmin=S.student.isAdmin;
+  }
+  const {data,error}=await supabaseClient.rpc('get_class_leaderboard');if(error)throw error;
+  return (Array.isArray(data)?data:[]).sort((a,b)=>(Number(b.total_xp)||0)-(Number(a.total_xp)||0)||(Number(b.level)||0)-(Number(a.level)||0)||String(a.name||'').localeCompare(String(b.name||'')));
+}
 async function cloudRegisterStudent(name,className,userArg=null){
   if(!supabaseClient)throw new Error('Shared database is not configured yet.');
   const user=userArg||await ensureSupabaseUser();if(!user)throw new Error('Could not create the shared student session.');
@@ -1238,7 +1251,7 @@ function renderView(){
     const r=ui.route;
     v.innerHTML=({dashboard:viewDashboard,agenda:viewClass,class:viewClass,homework:viewHomework,calendar:viewCalendar,subjects:viewSubjects,subject:viewSubject,achievements:viewAchievements,leaderboard:viewLeaderboard,statistics:viewStats,students:viewStudents,settings:viewSettings}[r.name]||viewDashboard)();
     if(r.name==='students'&&!S.student.isAdmin)go('dashboard');
-  if(r.name==='leaderboard'&&SUPABASE_CONFIGURED&&!ui._leaderboard&&!ui._leaderboardLoading){ui._leaderboardLoading=true;cloudLeaderboard().then(x=>{ui._leaderboard=x}).catch(e=>{console.error(e);ui._leaderboard=[]}).finally(()=>{ui._leaderboardLoading=false;renderView()})}
+  if(r.name==='leaderboard'&&SUPABASE_CONFIGURED&&!ui._leaderboard&&!ui._leaderboardLoading&&!ui._leaderboardError){ui._leaderboardLoading=true;cloudLeaderboard().then(x=>{ui._leaderboard=x;ui._leaderboardError=''}).catch(e=>{console.error(e);ui._leaderboard=null;ui._leaderboardError=sharedError(e,'Could not load the leaderboard.')}).finally(()=>{ui._leaderboardLoading=false;renderView()})}
   }catch(e){console.error(e);v.innerHTML=`<div class="empty"><h3>Something went wrong showing this page</h3><p>Your data is safe. Try another page or reload.</p></div>`}
   const bn=$('#banner');
   const cloudBanner=(SUPABASE_CONFIGURED&&SUPABASE_AUTH_LAST_ERROR)?`<div class="errbanner"><b>Shared cloud connection problem.</b> ${esc(SUPABASE_AUTH_LAST_ERROR)} <button class="btn sm" data-act="cloudretry" style="margin-left:8px">Retry</button></div>`:'';
@@ -1481,7 +1494,7 @@ function viewStats(){
 }
 
 /* ----- Admin student directory ----- */
-function viewLeaderboard(){if(!SUPABASE_CONFIGURED)return '<div class="empty"><h3>Leaderboard unavailable</h3><p>The shared database is required for the class leaderboard.</p></div>';if(ui._leaderboardLoading)return '<div class="empty"><h3>Loading leaderboard…</h3></div>';const rows=ui._leaderboard||[];return '<div class="page-h"><div><h1>Leaderboard</h1><p>Students in '+esc(S.student.className)+', lowest level to highest level.</p></div><button class="btn" data-act="leaderboard-refresh">'+ico('refresh',16)+'Refresh</button></div>'+(rows.length?'<section class="card"><div class="stack">'+rows.map((p,i)=>'<div class="set-row" style="display:grid;grid-template-columns:42px 1fr auto;gap:12px;align-items:center;border-top:'+(i?'1px solid var(--line)':'0')+'"><span class="tile sm">'+(i+1)+'</span><div><b>'+esc(p.name)+'</b><small>Level '+(Number(p.level)||1)+' · '+fmtNum(Number(p.total_xp)||0)+' XP'+(p.id===S.student.id?' · You':'')+'</small></div><span class="pill '+(p.id===S.student.id?'xp':'acc')+'">Lv '+(Number(p.level)||1)+'</span></div>').join('')+'</div></section>':'<div class="empty"><h3>No students yet</h3><p>Once students in your class have accounts, they will appear here.</p></div>')}
+function viewLeaderboard(){if(!SUPABASE_CONFIGURED)return '<div class="empty"><h3>Leaderboard unavailable</h3><p>The shared database is required for the class leaderboard.</p></div>';if(ui._leaderboardLoading)return '<div class="empty"><h3>Loading leaderboard…</h3></div>';if(ui._leaderboardError)return '<div class="empty"><h3>Could not load the leaderboard</h3><p>'+esc(ui._leaderboardError)+'</p><button class="btn" data-act="leaderboard-refresh">'+ico('refresh',16)+'Try again</button></div>';const rows=ui._leaderboard||[];return '<div class="page-h"><div><h1>Leaderboard</h1><p>Students in '+esc(S.student.className)+', ranked by XP, highest first.</p></div><button class="btn" data-act="leaderboard-refresh">'+ico('refresh',16)+'Refresh</button></div>'+(rows.length?'<section class="card"><div class="stack">'+rows.map((p,i)=>'<div class="set-row" style="display:grid;grid-template-columns:42px 1fr auto;gap:12px;align-items:center;border-top:'+(i?'1px solid var(--line)':'0')+'"><span class="tile sm">'+(i+1)+'</span><div><b>'+esc(p.name)+'</b><small>Level '+(Number(p.level)||1)+' · '+fmtNum(Number(p.total_xp)||0)+' XP'+(p.id===S.student.id?' · You':'')+'</small></div><span class="pill '+(p.id===S.student.id?'xp':'acc')+'">Lv '+(Number(p.level)||1)+'</span></div>').join('')+'</div></section>':'<div class="empty"><h3>No students yet</h3><p>Once students in your class have accounts, they will appear here.</p></div>')}
 function viewStudents(){
   if(!S.student.isAdmin){return`<div class="empty"><h3>Admin access required</h3><p>This page is only available to admin profiles.</p></div>`}
   const q=String(ui.peopleQuery||'').trim().toLowerCase();
@@ -1498,7 +1511,7 @@ function viewStudents(){
       <section class="card" style="margin-bottom:16px">
         <div class="row wrap between"><label class="search" style="max-width:420px">${ico('search',18)}<input id="peopleq" type="search" placeholder="Search students or classes…" autocomplete="off" value="${esc(ui.peopleQuery||'')}"></label><span class="muted">${people.length} shown · ${classes.length} class${classes.length===1?'':'es'} · ${fmtNum(totalXp)} total XP</span></div>
       </section>
-      ${people.length?`<section class="card"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:720px"><thead><tr style="text-align:left;color:var(--muted);font-size:12px"><th style="padding:10px 8px">Student</th><th style="padding:10px 8px">Class</th><th style="padding:10px 8px">Password</th><th style="padding:10px 8px">Level</th><th style="padding:10px 8px">XP</th><th style="padding:10px 8px">Role</th></tr></thead><tbody>${people.map((p,i)=>`<tr style="border-top:1px solid var(--line)"><td style="padding:12px 8px"><b>${esc(p.name)}</b></td><td style="padding:12px 8px;color:var(--muted)">${esc(p.className||'No class')}</td><td style="padding:12px 8px"><span class="pill ${p.hasPassword?'ok':'lo'}">${p.hasPassword?'Set':'Not set'}</span></td><td style="padding:12px 8px"><span class="pill acc">Lv ${Number(p.level)||1}</span></td><td style="padding:12px 8px"><span class="xpchip">${fmtNum(Number(p.totalXP)||0)} XP</span></td><td style="padding:12px 8px"><span class="pill ${p.isAdmin?'xp':'acc'}">${p.isAdmin?'Admin':'Student'}</span></td></tr>`).join('')}</tbody></table></div></section>`:
+      ${people.length?`<section class="card"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:900px"><thead><tr style="text-align:left;color:var(--muted);font-size:12px"><th style="padding:10px 8px">Student</th><th style="padding:10px 8px">Class</th><th style="padding:10px 8px">Password</th><th style="padding:10px 8px">Level</th><th style="padding:10px 8px">XP</th><th style="padding:10px 8px">Role</th><th style="padding:10px 8px">Change class</th></tr></thead><tbody>${people.map((p,i)=>`<tr style="border-top:1px solid var(--line)"><td style="padding:12px 8px"><b>${esc(p.name)}</b></td><td style="padding:12px 8px;color:var(--muted)">${esc(p.className||'No class')}</td><td style="padding:12px 8px"><span class="pill ${p.hasPassword?'ok':'lo'}">${p.hasPassword?'Set':'Not set'}</span></td><td style="padding:12px 8px"><span class="pill acc">Lv ${Number(p.level)||1}</span></td><td style="padding:12px 8px"><span class="xpchip">${fmtNum(Number(p.totalXP)||0)} XP</span></td><td style="padding:12px 8px"><span class="pill ${p.isAdmin?'xp':'acc'}">${p.isAdmin?'Admin':'Student'}</span></td><td style="padding:12px 8px">${p.isAdmin?'<span class="muted">Admin account</span>':`<button class="btn sm" data-act="student-class-change" data-id="${esc(p.id)}">Change class</button>`}</td></tr>`).join('')}</tbody></table></div></section>`:
       `<div class="empty"><h3>No students found</h3><p>Try a different name or class.</p></div>`}`}`}
 
 /* ----- Settings ----- */
@@ -2012,6 +2025,31 @@ async function fetchStudents(){
   }));
   Class.peopleStatus='ready';return true;
 }
+async function cloudAdminSetStudentClass(studentId,className){
+  if(!supabaseClient||!S.student.isAdmin)throw new Error('Administrator access is required.');
+  const target=normalizeClassName(className).slice(0,40);
+  if(!ALLOWED_CLASSES.includes(target))throw new Error('Choose a valid class.');
+  const {data,error}=await supabaseClient.rpc('admin_set_student_class',{p_student_id:studentId,p_class_name:target});
+  if(error)throw error;
+  if(!data?.id)throw new Error('The student class could not be updated.');
+  return data;
+}
+function openStudentClassForm(student){
+  const current=normalizeClassName(student.className||'');
+  const validCurrent=ALLOWED_CLASSES.includes(current);
+  const options=`${validCurrent?'':`<option value="" selected disabled>Choose a class (current: ${esc(current||'unknown')})</option>`}${ALLOWED_CLASSES.map(cls=>`<option value="${esc(cls)}" ${cls===current?'selected':''}>${esc(cls)}</option>`).join('')}`;
+  const m=openModal(`${mhead('Change student class')}<form class="mb" id="studentclassform"><div class="fgrid"><p class="muted full">Move <b>${esc(student.name)}</b> from ${esc(current||'an unknown class')}. They will see the agenda for their new class.</p><label class="field full"><span>New class</span><select class="sel" name="className" required>${options}</select></label><p class="err full" id="studentclasserr" role="alert"></p></div><div class="mf"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary" type="submit">Save class</button></div></form>`,{cls:'narrow'});
+  const form=m.el.querySelector('#studentclassform'),err=m.el.querySelector('#studentclasserr'),btn=form.querySelector('[type="submit"]');
+  form.onsubmit=async e=>{
+    e.preventDefault();const next=form.elements.namedItem('className').value;
+    if(!ALLOWED_CLASSES.includes(next)){err.textContent='Choose a valid class.';return}
+    btn.disabled=true;btn.textContent='Saving…';err.textContent='';
+    try{
+      await cloudAdminSetStudentClass(student.id,next);
+      await fetchStudents();closeModal(m);if(ui.route.name==='students')renderView();toast(`${student.name} moved to ${next}`);
+    }catch(e2){console.error('Student class update failed:',e2);err.textContent=sharedError(e2,'Could not change the student’s class.');btn.disabled=false;btn.textContent='Save class'}
+  };
+}
 function stopCloudWatchers(){
   try{if(Class.profileWatch&&supabaseClient)supabaseClient.removeChannel(Class.profileWatch)}catch(e){}
   try{if(Class.agendaWatch&&supabaseClient)supabaseClient.removeChannel(Class.agendaWatch)}catch(e){}
@@ -2024,12 +2062,26 @@ function startCloudWatchers(){
     .on('postgres_changes',{event:'*',schema:'public',table:'class_agenda_posts'},async()=>{
       try{await fetchClassPosts();if(ui.route.name==='class')renderView()}catch(e){console.error('Shared agenda refresh failed:',e)}
     }).subscribe();
+  let profileChannel=supabaseClient.channel('student-profile-'+(Class.me||'unknown'))
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'students',filter:`id=eq.${Class.me}`},async()=>{
+      try{
+        const p=await cloudOwnProfile();if(!p)return;
+        const oldKey=Class.classKey;
+        S.student.id=p.id;S.student.name=String(p.name||S.student.name).slice(0,40);
+        S.student.className=normalizeClassName(p.class_name||S.student.className).slice(0,40);
+        S.student.isAdmin=!!p.is_admin;S.student.hasPassword=!!p.has_password;S.student.profileComplete=true;
+        await P.student();Class.me=p.id;Class.className=S.student.className;Class.classKey=classKey(Class.className);Class.isAdmin=S.student.isAdmin;
+        updateChrome();
+        if(oldKey!==Class.classKey){ui._leaderboard=null;ui._leaderboardError='';await fetchClassPosts();}
+        if(ui.route.name==='class'||ui.route.name==='leaderboard')renderView();
+      }catch(e){console.error('Student profile refresh failed:',e)}
+    });
   if(S.student.isAdmin){
-    Class.profileWatch=supabaseClient.channel('students-directory')
-      .on('postgres_changes',{event:'*',schema:'public',table:'students'},async()=>{
-        try{await fetchStudents();if(ui.route.name==='students')renderView()}catch(e){console.error('Student directory refresh failed:',e)}
-      }).subscribe();
+    profileChannel=profileChannel.on('postgres_changes',{event:'*',schema:'public',table:'students'},async()=>{
+      try{await fetchStudents();if(ui.route.name==='students')renderView()}catch(e){console.error('Student directory refresh failed:',e)}
+    });
   }
+  Class.profileWatch=profileChannel.subscribe();
 }
 async function initClass(){
   Class.className=normalizeClassName(S.student.className);
@@ -2313,7 +2365,8 @@ const ACT={
     try{await syncProfile();await fetchClassPosts();renderView();toast('Class agenda synced')}catch(e){console.error(e);toast(sharedError(e,'Could not sync the class agenda.'),{kind:'bad'})}
     finally{t.disabled=false;t.innerHTML=ico('refresh',16)+'Sync'}
   },
-  'leaderboard-refresh':async t=>{t.disabled=true;try{ui._leaderboard=await cloudLeaderboard();toast('Leaderboard refreshed')}catch(e){toast(sharedError(e,'Could not load the leaderboard.'),{kind:'bad'})}finally{t.disabled=false;renderAll()}},
+  'leaderboard-refresh':async t=>{t.disabled=true;ui._leaderboardError='';try{ui._leaderboard=await cloudLeaderboard();toast('Leaderboard refreshed')}catch(e){ui._leaderboard=null;ui._leaderboardError=sharedError(e,'Could not load the leaderboard.');toast(ui._leaderboardError,{kind:'bad'})}finally{t.disabled=false;renderAll()}},
+  'student-class-change':t=>{const student=(Class.people||[]).find(p=>p.id===t.dataset.id);if(student&&!student.isAdmin)openStudentClassForm(student)},
   'apply-password':async t=>{const m=openModal(mhead('Apply password')+'<form class="mb" id="pwform"><div class="fgrid"><label class="field full"><span>Password</span><input class="inp" type="password" name="password" minlength="8" autocomplete="new-password" required></label><label class="field full"><span>Confirm password</span><input class="inp" type="password" name="confirm" minlength="8" autocomplete="new-password" required></label><p id="pwerr" style="color:var(--bad);font-size:13.5px;grid-column:1/-1" role="alert"></p></div><div class="mf"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary" type="submit">Save password</button></div></form>',{cls:'narrow'});const f=m.el.querySelector('#pwform'),err=m.el.querySelector('#pwerr');f.onsubmit=async e=>{e.preventDefault();const p=f.elements.password.value;if(p.length<8){err.textContent='Password must be at least 8 characters.';return}if(p!==f.elements.confirm.value){err.textContent='Passwords do not match.';return}const b=f.querySelector('button[type=submit]');b.disabled=true;b.textContent='Saving…';try{await cloudSetPassword(p);closeModal(m);renderAll();toast('Password saved. Your account is now permanent.')}catch(e2){err.textContent=sharedError(e2,'Could not save your password.');b.disabled=false;b.textContent='Save password'}}},
   'claim-admin':async t=>{
     const code=$('#adminclaimcode')?.value.trim()||'',err=$('#adminclaimerr'),btn=t;
@@ -2393,22 +2446,33 @@ function showSetup(){
       '<label class="field"><span>Class</span><select class="sel" id="setupclass" name="className" autocomplete="off" required><option value="" disabled selected>Select your class</option>'+ALLOWED_CLASSES.map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('')+'</select></label>'+
       '<label class="field"><span>Password</span><input class="inp" id="setuppassword" name="password" type="password" minlength="8" autocomplete="new-password" enterkeyhint="next" placeholder="At least 8 characters" required></label>'+
       '<label class="field" id="setupconfirmfield"><span>Confirm password</span><input class="inp" id="setupconfirm" name="confirmPassword" type="password" minlength="8" autocomplete="new-password" enterkeyhint="done" required></label>'+
-      '<p id="setuperr" style="color:var(--bad);font-size:13px;margin-top:2px" role="alert" aria-live="polite"></p><button class="btn primary auth-submit" type="submit" id="setupsubmit">Create account</button></form></div>';
-  const f=$('#setupform'),err=$('#setuperr'),newBtn=$('#authnew'),loginBtn=$('#authlogin'),confirmField=$('#setupconfirmfield'),confirmInput=$('#setupconfirm'),passwordInput=$('#setuppassword');let mode='create';
+      '<p id="setuperr" style="color:var(--bad);font-size:13px;margin-top:2px" role="alert" aria-live="polite"></p><button class="btn primary auth-submit" type="submit" id="setupsubmit">Create account</button></form><p id="authhint" class="hint" style="text-align:center;margin-top:10px"></p></div>';
+  const f=$('#setupform'),err=$('#setuperr'),newBtn=$('#authnew'),loginBtn=$('#authlogin'),confirmField=$('#setupconfirmfield'),confirmInput=$('#setupconfirm'),passwordInput=$('#setuppassword'),nameInput=$('#setupname'),classInput=$('#setupclass'),authHint=$('#authhint');let mode='create';
+  const drafts={create:{name:'',className:'',password:'',confirm:''},login:{name:'',className:'',password:''}};
   f.addEventListener('focusin',e=>{if(e.target.matches('input,select'))setTimeout(()=>e.target.scrollIntoView({block:'nearest',behavior:'smooth'}),250)});
-  function setMode(next){mode=next;newBtn.classList.toggle('on',mode==='create');loginBtn.classList.toggle('on',mode==='login');confirmField.hidden=mode==='login';confirmInput.required=mode==='create';passwordInput.autocomplete=mode==='create'?'new-password':'current-password';passwordInput.setAttribute('enterkeyhint',mode==='create'?'next':'go');$('#setupsubmit').textContent=mode==='create'?'Create account':'Log in';err.textContent=''}
+  function setMode(next){
+    if(next!==mode){
+      drafts[mode]={name:nameInput.value,className:classInput.value,password:passwordInput.value,confirm:confirmInput.value};
+      mode=next;const d=drafts[mode];nameInput.value=d.name;classInput.value=d.className;passwordInput.value=d.password;confirmInput.value=d.confirm||'';
+    }
+    newBtn.classList.toggle('on',mode==='create');loginBtn.classList.toggle('on',mode==='login');confirmField.hidden=mode==='login';confirmInput.required=mode==='create';passwordInput.autocomplete=mode==='create'?'new-password':'current-password';passwordInput.setAttribute('enterkeyhint',mode==='create'?'next':'go');$('#setupsubmit').textContent=mode==='create'?'Create account':'Log in';
+    authHint.innerHTML=mode==='create'?'Already have an account? <button type="button" data-auth-mode="login" style="border:0;background:none;color:var(--accent);font:inherit;text-decoration:underline;cursor:pointer">Go to sign in.</button>':'Need an account? <button type="button" data-auth-mode="create" style="border:0;background:none;color:var(--accent);font:inherit;text-decoration:underline;cursor:pointer">Create one.</button>';
+    err.textContent='';
+  }
+  bootEl.addEventListener('click',e=>{const b=e.target.closest('[data-auth-mode]');if(b){e.preventDefault();setMode(b.dataset.authMode)}});
   newBtn.onclick=()=>setMode('create');loginBtn.onclick=()=>setMode('login');
   f.onsubmit=async e=>{e.preventDefault();const name=$('#setupname').value.trim(),cls=normalizeClassName($('#setupclass').value),pw=$('#setuppassword').value;if(!name||!cls){err.textContent='Enter your name and class.';return}if(pw.length<8){err.textContent='Password must be at least 8 characters.';return}if(mode==='create'&&pw!==confirmInput.value){err.textContent='Passwords do not match.';return}
     const submit=$('#setupsubmit');submit.disabled=true;submit.textContent=mode==='create'?'Creating…':'Logging in…';err.textContent='';
     try{
       let p;
       if(mode==='login'){p=await cloudLogin(name,cls,pw);if(!p)throw new Error('Your student profile could not be loaded.');}
-      else{const user=await ensureSupabaseUser();if(!user)throw new Error(SUPABASE_AUTH_LAST_ERROR||'Could not create your student session.');p=await cloudRegisterStudent(name,cls,user);if(!p)throw new Error('Your profile could not be saved.');await cloudSetPassword(pw);}
+      else{const user=await ensureSupabaseUser();if(!user)throw new Error(SUPABASE_AUTH_LAST_ERROR||'Could not create your student session.');p=await cloudRegisterStudent(name,cls,user);if(!p)throw new Error('Your profile could not be saved.');if(p.has_password)throw new Error('You already have an account. Go to sign in.');await cloudSetPassword(pw);}
       S.student.id=p.id;S.student.name=String(p.name||name).slice(0,40);S.student.className=normalizeClassName(p.class_name||cls).slice(0,40);S.student.isAdmin=!!p.is_admin;S.student.hasPassword=mode==='create'?true:!!p.has_password;S.student.profileComplete=true;
       if(Number(p.total_xp||0)>S.student.totalXP){S.student.totalXP=Number(p.total_xp);S.student.level=Number(p.level||levelInfo(S.student.totalXP).level)}
-      await P.student();await cloudSyncProgress();const hp=location.hash.replace(/^#\/?/,'')||'dashboard';ui.routeStr=hp;ui.route=parseRoute(hp);shell();checkAchievements();refreshReminders();await initClass();bootEl._authViewportCleanup?.();$('#boot').remove();$('#app').hidden=false;renderAll();
-    }catch(e2){console.error('Account action failed:',e2);err.textContent=sharedError(e2,mode==='create'?'Could not create your account.':'Could not log you in.')}finally{submit.disabled=false;submit.textContent=mode==='create'?'Create account':'Log in'}
+      await P.student();await cloudSyncProgress();ui._leaderboard=null;ui._leaderboardError='';const hp=location.hash.replace(/^#\/?/,'')||'dashboard';ui.routeStr=hp;ui.route=parseRoute(hp);shell();checkAchievements();refreshReminders();await initClass();bootEl._authViewportCleanup?.();$('#boot').remove();$('#app').hidden=false;renderAll();
+    }catch(e2){console.error('Account action failed:',e2);const raw=String(e2?.message||e2||'');if(mode==='create'&&/already have an account|already exist|already registered|duplicate|23505/i.test(raw)){err.innerHTML='You already have an account. <button type="button" data-auth-mode="login" style="border:0;background:none;color:var(--bad);font:inherit;text-decoration:underline;cursor:pointer">Go to sign in.</button>'}else err.textContent=sharedError(e2,mode==='create'?'Could not create your account.':'Could not log you in.')}finally{submit.disabled=false;submit.textContent=mode==='create'?'Create account':'Log in'}
   };
+  setMode('create');
   if(!window.matchMedia('(pointer: coarse)').matches)setTimeout(()=>$('#setupname')?.focus({preventScroll:true}),30);
 }
 
