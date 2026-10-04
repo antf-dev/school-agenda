@@ -664,7 +664,7 @@ async function cloudRegisterStudent(name,className,userArg=null){
   const profile=data||await cloudOwnProfile(user);
   if(profile){
     S.student.hasPassword=!!profile.has_password;
-    const cloudXp=Number(profile.total_xp||0);if(cloudXp>S.student.totalXP){S.student.totalXP=cloudXp;S.student.level=Number(profile.level||levelInfo(cloudXp).level);P.student();}
+    const cloudXp=Number(profile.total_xp||0);if(cloudXp>S.student.totalXP){S.student.totalXP=cloudXp;S.student.level=Number(profile.level||levelInfo(cloudXp).level);P.student();} else if(S.student.totalXP>cloudXp)cloudSyncProgress();
     /* Auth metadata is display-only. RLS/admin authorization still uses public.students. */
     try{await supabaseClient.auth.updateUser({data:{name:profile.name,display_name:profile.name,class_name:profile.class_name,class_key:profile.class_key,is_admin:!!profile.is_admin}})}catch(metaErr){console.warn('Could not sync Auth user metadata:',metaErr)}
   }
@@ -2409,7 +2409,9 @@ async function boot(){
         if(p){
           S.student.id=p.id;S.student.name=String(p.name||S.student.name).slice(0,40);
           S.student.className=normalizeClassName(p.class_name||S.student.className).slice(0,40);
-          S.student.isAdmin=!!p.is_admin;S.student.profileComplete=true;P.student();
+          S.student.isAdmin=!!p.is_admin;S.student.hasPassword=!!p.has_password;S.student.profileComplete=true;
+          if(Number(p.total_xp||0)>S.student.totalXP){S.student.totalXP=Number(p.total_xp);S.student.level=Number(p.level||levelInfo(S.student.totalXP).level)} else if(S.student.totalXP>Number(p.total_xp||0))await cloudSyncProgress();
+          P.student();
         }
       }
     }catch(e){SUPABASE_AUTH_LAST_ERROR=sharedError(e,'Could not restore the shared cloud profile.');console.error('Cloud profile restore failed:',e)}
