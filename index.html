@@ -510,7 +510,7 @@ const DEFAULT_SUBJECTS=[
 ];
 const SUBJECT_ALIASES={math:['maths','mathematics','mat'],biology:['bio','svt'],chemistry:['chem'],physics:['phys'],economics:['econ','eco'],geography:['geo'],history:['hist'],french:['fr','francais','français'],english:['eng'],arabic:['عربي','عربى','لغة عربية'],civics:['civic','civics education']};
 const defaultSettings=()=>({theme:'dark',notify:{dueToday:true,dueTomorrow:true,overdue:true,xp:true,levelUp:true,achievement:true,streak:true},browserNotify:false,aiReading:true,showCompleted:true});
-const defaultStudent=()=>({id:'student',name:'',className:'',isAdmin:false,profileComplete:false,totalXP:0,level:1,completedCount:0,earlyCount:0,activeDays:[],perfectDays:[],bestStreak:0,createdAt:new Date().toISOString(),schema:SCHEMA_VERSION});
+const defaultStudent=()=>({id:'student',name:'',className:'',isAdmin:false,profileComplete:false,hasPassword:false,totalXP:0,level:1,completedCount:0,earlyCount:0,activeDays:[],perfectDays:[],bestStreak:0,createdAt:new Date().toISOString(),schema:SCHEMA_VERSION});
 
 /* Level curve: Lv1 0, Lv2 500, Lv3 1200, Lv4 2100, Lv5 3200 … (each step costs 200 XP more than the last) */
 const xpFor=n=>(n-1)*(100*n+300);
@@ -641,11 +641,16 @@ async function cloudOwnProfile(userArg=null){
   if(!supabaseClient)return null;
   const user=userArg||await ensureSupabaseUser();if(!user)return null;
   const {data,error}=await supabaseClient.from('students')
-    .select('id,name,class_name,class_key,is_admin,created_at,updated_at')
+    .select('id,name,class_name,class_key,is_admin,has_password,total_xp,level,created_at,updated_at')
     .eq('id',user.id).maybeSingle();
   if(error)throw error;
   return data||null;
 }
+async function studentAuth(action,body={}){if(!SUPABASE_CONFIGURED||!supabaseClient)throw new Error('Shared account features are not configured yet.');const {data,error}=await supabaseClient.functions.invoke('student-auth',{body:{action,...body}});if(error)throw error;if(!data?.ok)throw new Error(data?.message||'Account action failed.');return data}
+async function cloudSetPassword(password){const user=await ensureSupabaseUser();if(!user)throw new Error(SUPABASE_AUTH_LAST_ERROR||'No active student session.');if(String(password||'').length<8)throw new Error('Password must be at least 8 characters.');await studentAuth('set-password',{password});S.student.hasPassword=true;P.student();return true}
+async function cloudLogin(name,className,password){const data=await studentAuth('login',{name,className,password});if(!data.session?.access_token||!data.session?.refresh_token)throw new Error('The login response was incomplete.');const {error}=await supabaseClient.auth.setSession({access_token:data.session.access_token,refresh_token:data.session.refresh_token});if(error)throw error;SUPABASE_CACHED_USER=(await supabaseClient.auth.getUser()).data.user||null;return data.profile||null}
+async function cloudSyncProgress(){if(!supabaseClient||!S.student.profileComplete||!S.student.id||S.student.id==='student')return null;try{const {data,error}=await supabaseClient.rpc('update_student_progress',{p_total_xp:Math.max(0,Math.floor(Number(S.student.totalXP)||0)),p_level:levelInfo(S.student.totalXP).level});if(error)throw error;return data||null}catch(e){console.warn('Could not sync student progress:',e);return null}}
+async function cloudLeaderboard(){if(!supabaseClient)return [];const {data,error}=await supabaseClient.rpc('get_class_leaderboard');if(error)throw error;return Array.isArray(data)?data:[]}
 async function cloudRegisterStudent(name,className,userArg=null){
   if(!supabaseClient)throw new Error('Shared database is not configured yet.');
   const user=userArg||await ensureSupabaseUser();if(!user)throw new Error('Could not create the shared student session.');
@@ -658,6 +663,8 @@ async function cloudRegisterStudent(name,className,userArg=null){
   if(error)throw error;
   const profile=data||await cloudOwnProfile(user);
   if(profile){
+    S.student.hasPassword=!!profile.has_password;
+    const cloudXp=Number(profile.total_xp||0);if(cloudXp>S.student.totalXP){S.student.totalXP=cloudXp;S.student.level=Number(profile.level||levelInfo(cloudXp).level);P.student();}
     /* Auth metadata is display-only. RLS/admin authorization still uses public.students. */
     try{await supabaseClient.auth.updateUser({data:{name:profile.name,display_name:profile.name,class_name:profile.class_name,class_key:profile.class_key,is_admin:!!profile.is_admin}})}catch(metaErr){console.warn('Could not sync Auth user metadata:',metaErr)}
   }
@@ -974,7 +981,7 @@ const A={
     let res=null;
     if(!h.xpAwarded)res=awardXP(h);else toast('Done again – this one already gave you XP.');
     P.hw(h);P.student();checkAchievements();renderAll();
-    if(res&&res.levelUp)showLevelUp(res.levelUp);
+    if(res&&res.levelUp)showLevelUp(res.levelUp);if(res)cloudSyncProgress();
     return res;
   },
   addSubject(d){
@@ -1139,7 +1146,7 @@ const ui={route:{name:'dashboard',arg:''},routeStr:'dashboard',query:'',f:{quick
   cal:{y:new Date().getFullYear(),m:new Date().getMonth(),sel:todayStr()},bars:{},stat:{metric:'tasks',range:14},subTab:'all',notifOpen:false,saveState:'saved'};
 
 function parseRoute(p){const [name,arg]=String(p||'').replace(/^#?\/?/,'').split('/');
-  const ok=['dashboard','agenda','class','homework','calendar','subjects','subject','achievements','statistics','students','settings'];
+  const ok=['dashboard','agenda','class','homework','calendar','subjects','subject','achievements','leaderboard','statistics','students','settings'];
   return{name:ok.includes(name)?name:'dashboard',arg:arg||''}}
 function go(path){
   try{location.hash='#/'+path}catch(e){}
@@ -1156,7 +1163,7 @@ function applyTheme(){
 
 const NAV=[['dashboard','Dashboard'],['agenda','Agenda'],['homework','Homework'],['calendar','Calendar']];
 /* Primary Agenda is the public class agenda; legacy #/class remains an alias. */
-const MORE_NAV=[['subjects','Subjects'],['achievements','Achievements'],['statistics','Statistics'],['settings','Settings'],['students','Students']];
+const MORE_NAV=[['subjects','Subjects'],['achievements','Achievements'],['leaderboard','Leaderboard'],['statistics','Statistics'],['settings','Settings'],['students','Students']];
 const navKey=()=>{if(ui.route.name==='subject')return'subjects';if(ui.route.name==='class'||ui.route.name==='agenda')return'agenda';return ui.route.name};
 
 function shell(){
@@ -1214,8 +1221,9 @@ function renderView(){
   const v=$('#view');
   try{
     const r=ui.route;
-    v.innerHTML=({dashboard:viewDashboard,agenda:viewClass,class:viewClass,homework:viewHomework,calendar:viewCalendar,subjects:viewSubjects,subject:viewSubject,achievements:viewAchievements,statistics:viewStats,students:viewStudents,settings:viewSettings}[r.name]||viewDashboard)();
+    v.innerHTML=({dashboard:viewDashboard,agenda:viewClass,class:viewClass,homework:viewHomework,calendar:viewCalendar,subjects:viewSubjects,subject:viewSubject,achievements:viewAchievements,leaderboard:viewLeaderboard,statistics:viewStats,students:viewStudents,settings:viewSettings}[r.name]||viewDashboard)();
     if(r.name==='students'&&!S.student.isAdmin)go('dashboard');
+  if(r.name==='leaderboard'&&SUPABASE_CONFIGURED&&!ui._leaderboard&&!ui._leaderboardLoading){ui._leaderboardLoading=true;cloudLeaderboard().then(x=>{ui._leaderboard=x}).catch(e=>{console.error(e);ui._leaderboard=[]}).finally(()=>{ui._leaderboardLoading=false;renderView()})}
   }catch(e){console.error(e);v.innerHTML=`<div class="empty"><h3>Something went wrong showing this page</h3><p>Your data is safe. Try another page or reload.</p></div>`}
   const bn=$('#banner');
   const cloudBanner=(SUPABASE_CONFIGURED&&SUPABASE_AUTH_LAST_ERROR)?`<div class="errbanner"><b>Shared cloud connection problem.</b> ${esc(SUPABASE_AUTH_LAST_ERROR)} <button class="btn sm" data-act="cloudretry" style="margin-left:8px">Retry</button></div>`:'';
@@ -1458,6 +1466,7 @@ function viewStats(){
 }
 
 /* ----- Admin student directory ----- */
+function viewLeaderboard(){if(!SUPABASE_CONFIGURED)return '<div class="empty"><h3>Leaderboard unavailable</h3><p>The shared database is required for the class leaderboard.</p></div>';if(ui._leaderboardLoading)return '<div class="empty"><h3>Loading leaderboard…</h3></div>';const rows=ui._leaderboard||[];return '<div class="page-h"><div><h1>Leaderboard</h1><p>Students in '+esc(S.student.className)+', lowest level to highest level.</p></div><button class="btn" data-act="leaderboard-refresh">'+ico('refresh',16)+'Refresh</button></div>'+(rows.length?'<section class="card"><div class="stack">'+rows.map((p,i)=>'<div class="set-row" style="display:grid;grid-template-columns:42px 1fr auto;gap:12px;align-items:center;border-top:'+(i?'1px solid var(--line)':'0')+'"><span class="tile sm">'+(i+1)+'</span><div><b>'+esc(p.name)+'</b><small>Level '+(Number(p.level)||1)+' · '+fmtNum(Number(p.total_xp)||0)+' XP'+(p.id===S.student.id?' · You':'')+'</small></div><span class="pill '+(p.id===S.student.id?'xp':'acc')+'">Lv '+(Number(p.level)||1)+'</span></div>').join('')+'</div></section>':'<div class="empty"><h3>No students yet</h3><p>Once students in your class have accounts, they will appear here.</p></div>')}
 function viewStudents(){
   if(!S.student.isAdmin){return`<div class="empty"><h3>Admin access required</h3><p>This page is only available to admin profiles.</p></div>`}
   const q=String(ui.peopleQuery||'').trim().toLowerCase();
@@ -1480,7 +1489,7 @@ function viewSettings(){
   const n=S.settings.notify;
   return`<div class="page-h"><div><h1>Settings</h1><p>Changes save automatically.</p></div></div>
   <div class="grid" style="max-width:760px">
-   <section class="card"><h2>Profile</h2><div class="fgrid"><label class="field"><span>What should we call you?</span><input class="inp" id="nameinp" maxlength="40" value="${esc(S.student.name)}" placeholder="Your name"></label><label class="field"><span>Class</span><select class="sel" id="classinp">${ALLOWED_CLASSES.map(c=>`<option value="${c}" ${S.student.className===c?'selected':''}>${c}</option>`).join('')}</select></label><div class="full"><span class="hint">${S.student.isAdmin?'Admin mode is enabled for this profile.':'Student mode'}</span></div></div></section>
+   <section class="card"><h2>Profile</h2><div class="fgrid"><label class="field"><span>What should we call you?</span><input class="inp" id="nameinp" maxlength="40" value="${esc(S.student.name)}" placeholder="Your name"></label><label class="field"><span>Class</span><select class="sel" id="classinp">${ALLOWED_CLASSES.map(c=>`<option value="${c}" ${S.student.className===c?'selected':''}>${c}</option>`).join('')}</select></label><div class="full"><span class="hint">${S.student.isAdmin?'Admin mode is enabled for this profile.':'Student mode'}</span></div></div></section>${(!S.student.hasPassword&&SUPABASE_CONFIGURED)?`<section class="card"><h2>Password</h2><p class="hint">Add a password to this existing account so you can log back in after changing devices or clearing browser data.</p><button class="btn primary" data-act="apply-password">Apply password</button></section>`:''}
    ${(!S.student.isAdmin&&SUPABASE_CONFIGURED)?`<section class="card"><h2>Admin access</h2><p class="hint">This registers your current Supabase account and verifies admin access in one step.</p><div class="row wrap" style="align-items:end"><label class="field" style="flex:1;min-width:220px"><span>Admin code</span><input class="inp" id="adminclaimcode" inputmode="numeric" autocomplete="off" placeholder="Enter admin code"></label><button class="btn primary" data-act="claim-admin">Enable admin</button></div><p id="adminclaimerr" style="color:var(--bad);font-size:13px;margin-top:8px"></p></section>`:''}
    <section class="card"><h2>Appearance</h2><div class="seg">${[['dark','Dark'],['light','Light'],['system','System']].map(([k,l])=>`<button class="${S.settings.theme===k?'on':''}" data-act="theme-set" data-k="${k}">${l}</button>`).join('')}</div></section>
    <section class="card"><h2>Notifications</h2>
@@ -2278,6 +2287,8 @@ const ACT={
     try{await syncProfile();await fetchClassPosts();renderView();toast('Class agenda synced')}catch(e){console.error(e);toast(sharedError(e,'Could not sync the class agenda.'),{kind:'bad'})}
     finally{t.disabled=false;t.innerHTML=ico('refresh',16)+'Sync'}
   },
+  'leaderboard-refresh':async t=>{t.disabled=true;try{ui._leaderboard=await cloudLeaderboard();toast('Leaderboard refreshed')}catch(e){toast(sharedError(e,'Could not load the leaderboard.'),{kind:'bad'})}finally{t.disabled=false;renderAll()}},
+  'apply-password':async t=>{const m=openModal(mhead('Apply password')+'<form class="mb" id="pwform"><div class="fgrid"><label class="field full"><span>Password</span><input class="inp" type="password" name="password" minlength="8" autocomplete="new-password" required></label><label class="field full"><span>Confirm password</span><input class="inp" type="password" name="confirm" minlength="8" autocomplete="new-password" required></label><p id="pwerr" style="color:var(--bad);font-size:13.5px;grid-column:1/-1" role="alert"></p></div><div class="mf"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary" type="submit">Save password</button></div></form>',{cls:'narrow'});const f=m.el.querySelector('#pwform'),err=m.el.querySelector('#pwerr');f.onsubmit=async e=>{e.preventDefault();const p=f.elements.password.value;if(p.length<8){err.textContent='Password must be at least 8 characters.';return}if(p!==f.elements.confirm.value){err.textContent='Passwords do not match.';return}const b=f.querySelector('button[type=submit]');b.disabled=true;b.textContent='Saving…';try{await cloudSetPassword(p);closeModal(m);renderAll();toast('Password saved. Your account is now permanent.')}catch(e2){err.textContent=sharedError(e2,'Could not save your password.');b.disabled=false;b.textContent='Save password'}}},
   'claim-admin':async t=>{
     const code=$('#adminclaimcode')?.value.trim()||'',err=$('#adminclaimerr'),btn=t;
     if(!code){if(err)err.textContent='Enter the admin code.';return}
