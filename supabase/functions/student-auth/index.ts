@@ -15,6 +15,36 @@ Deno.serve(async(req)=>{
  if(req.method!=="POST")return json({ok:false,message:"Method not allowed."},405);
  try{
   const body=await req.json(),action=String(body?.action||"");
+  if(action==="remove-user"){
+   const token=String(req.headers.get("Authorization")||"").replace(/^Bearer\\s+/i,"").trim();
+   if(!token)return json({ok:false,message:"Authentication required."},401);
+   const {data:actorData,error:actorError}=await authClient.auth.getUser(token);
+   if(actorError||!actorData.user)return json({ok:false,message:"Your admin session is invalid. Sign in again."},401);
+   const {data:actor,error:actorReadError}=await admin.from("students").select("is_admin").eq("id",actorData.user.id).maybeSingle();
+   if(actorReadError)return json({ok:false,message:"Could not verify administrator access."},500);
+   if(!actor?.is_admin)return json({ok:false,message:"Administrator access is required."},403);
+   const targetId=String(body?.studentId||"").trim();
+   if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(targetId))return json({ok:false,message:"Choose a valid student account."},400);
+   if(targetId===actorData.user.id)return json({ok:false,message:"You cannot remove your own administrator account."},400);
+   const {data:target,error:targetError}=await admin.from("students").select("id,name,is_admin").eq("id",targetId).maybeSingle();
+   if(targetError)return json({ok:false,message:"Could not load the selected student."},500);
+   if(!target)return json({ok:false,message:"This student account no longer exists."},404);
+   if(target.is_admin)return json({ok:false,message:"Administrator accounts cannot be removed from the student directory."},403);
+   const bucket="class-agenda-images",ownedPaths:string[]=[];
+   for(let offset=0;;offset+=1000){
+    const {data:objects,error:objectsError}=await admin.schema("storage").from("objects").select("name").eq("bucket_id",bucket).eq("owner_id",targetId).range(offset,offset+999);
+    if(objectsError)return json({ok:false,message:"Could not check the student's uploaded files; account was not removed."},500);
+    for(const object of objects||[])if(typeof object.name==="string")ownedPaths.push(object.name);
+    if(!objects||objects.length<1000)break;
+   }
+   for(let offset=0;offset<ownedPaths.length;offset+=100){
+    const {error:removeFilesError}=await admin.storage.from(bucket).remove(ownedPaths.slice(offset,offset+100));
+    if(removeFilesError)return json({ok:false,message:"Could not remove the student's uploaded agenda files; account was not removed."},500);
+   }
+   const {error:deleteError}=await admin.auth.admin.deleteUser(targetId);
+   if(deleteError)return json({ok:false,message:"Supabase could not remove this account: "+deleteError.message},500);
+   return json({ok:true,name:String(target.name||"Student")});
+  }
   if(action==="set-password"){
    const token=String(req.headers.get("Authorization")||"").replace(/^Bearer\s+/i,"").trim();
    if(!token)return json({ok:false,message:"Authentication required."},401);
