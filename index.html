@@ -1379,8 +1379,6 @@ function filterHW(){
     if(f.quick==='completed'&&!h.completed)return false;
     if(f.quick==='overdue'&&st!=='overdue')return false;
     if(f.subject&&h.subjectId!==f.subject)return false;
-    if(f.priority&&h.priority!==f.priority)return false;
-    if(f.difficulty&&h.difficulty!==f.difficulty)return false;
     if(f.date&&h.dueDate!==f.date)return false;
     if(q.length){const hay=[h.title,h.description,h.notes,s.name,TYPES[h.type],h.dueDate,fmtDate(h.dueDate)].join(' ').toLowerCase();if(!q.every(w=>hay.includes(w)))return false}
     return true;
@@ -1389,13 +1387,11 @@ function filterHW(){
 function viewHomework(){
   const f=ui.f;
   const quick=[['all','All'],['today','Today'],['active','Active'],['completed','Completed'],['overdue','Overdue']];
-  const dirty=f.subject||f.priority||f.difficulty||f.date||ui.query;
+  const dirty=f.subject||f.date||ui.query;
   return`<div class="page-h"><div><h1>Homework</h1><p>Check things off, earn XP.</p></div><button class="btn primary add-btn" data-act="add" style="display:inline-flex!important">${ico('plus',18)}Add homework</button></div>
   <div class="chips">${quick.map(([k,l])=>`<button class="chip ${f.quick===k?'on':''}" data-act="qf" data-k="${k}">${l}</button>`).join('')}</div>
   <div class="filters">
     <select class="sel" data-filter="subject" aria-label="Subject"><option value="">All subjects</option>${S.subjects.map(s=>`<option value="${esc(s.id)}" ${f.subject===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select>
-    <select class="sel" data-filter="priority" aria-label="Priority"><option value="">Any priority</option>${Object.entries(PRIO).map(([k,v])=>`<option value="${k}" ${f.priority===k?'selected':''}>${v.label} priority</option>`).join('')}</select>
-    <select class="sel" data-filter="difficulty" aria-label="Difficulty"><option value="">Any difficulty</option>${Object.entries(DIFF).map(([k,v])=>`<option value="${k}" ${f.difficulty===k?'selected':''}>${v.label}</option>`).join('')}</select>
     <input class="inp" type="date" data-filter="date" value="${esc(f.date)}" aria-label="Due date">
     ${dirty?`<button class="btn ghost sm" data-act="clearf">${ico('x',14)}Clear filters</button>`:''}
   </div>
