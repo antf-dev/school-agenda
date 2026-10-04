@@ -2383,6 +2383,15 @@ const ACT={
   },
   'leaderboard-refresh':async t=>{t.disabled=true;ui._leaderboardError='';try{ui._leaderboard=await cloudLeaderboard();toast('Leaderboard refreshed')}catch(e){ui._leaderboard=null;ui._leaderboardError=sharedError(e,'Could not load the leaderboard.');toast(ui._leaderboardError,{kind:'bad'})}finally{t.disabled=false;renderAll()}},
   'student-class-change':t=>{const student=(Class.people||[]).find(p=>p.id===t.dataset.id);if(student&&!student.isAdmin)openStudentClassForm(student)},
+  'student-remove':async t=>{
+    const student=(Class.people||[]).find(p=>p.id===t.dataset.id);
+    if(!S.student.isAdmin||!student||student.isAdmin)return;
+    const confirmed=await confirmDialog({title:'Remove this student account permanently?',body:`This permanently removes <b>${esc(student.name)}</b>'s sign-in and student profile, deletes class agenda posts they created, and removes their uploaded agenda images. They will not be able to sign in again. This cannot be undone.`,ok:'Remove account',danger:true});
+    if(!confirmed)return;
+    t.disabled=true;t.textContent='Removing…';
+    try{await studentAuth('remove-user',{studentId:student.id});Class.people=(Class.people||[]).filter(p=>p.id!==student.id);renderView();toast('Student account and uploaded agenda files removed');fetchStudents().then(()=>{if(ui.route.name==='students')renderView()}).catch(e=>console.error('Could not refresh the student directory:',e))}
+    catch(e){console.error('Could not remove student account:',e);toast(sharedError(e,'Could not remove this student account.'),{kind:'bad',ms:6000});t.disabled=false;t.textContent='Remove'}
+  },
   'apply-password':async t=>{const m=openModal(mhead('Apply password')+'<form class="mb" id="pwform"><div class="fgrid"><label class="field full"><span>Password</span><input class="inp" type="password" name="password" minlength="8" autocomplete="new-password" required></label><label class="field full"><span>Confirm password</span><input class="inp" type="password" name="confirm" minlength="8" autocomplete="new-password" required></label><p id="pwerr" style="color:var(--bad);font-size:13.5px;grid-column:1/-1" role="alert"></p></div><div class="mf"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary" type="submit">Save password</button></div></form>',{cls:'narrow'});const f=m.el.querySelector('#pwform'),err=m.el.querySelector('#pwerr');f.onsubmit=async e=>{e.preventDefault();const p=f.elements.password.value;if(p.length<8){err.textContent='Password must be at least 8 characters.';return}if(p!==f.elements.confirm.value){err.textContent='Passwords do not match.';return}const b=f.querySelector('button[type=submit]');b.disabled=true;b.textContent='Saving…';try{await cloudSetPassword(p);closeModal(m);renderAll();toast('Password saved. Your account is now permanent.')}catch(e2){err.textContent=sharedError(e2,'Could not save your password.');b.disabled=false;b.textContent='Save password'}}},
   'claim-admin':async t=>{
     const code=$('#adminclaimcode')?.value.trim()||'',err=$('#adminclaimerr'),btn=t;
@@ -2550,8 +2559,9 @@ async function boot(){
       }catch(e){SUPABASE_AUTH_LAST_ERROR=sharedError(e,'Could not restore the shared cloud profile.');console.error('Cloud profile restore failed:',e);renderAll()}
     }
     checkAchievements();refreshReminders();
-    setInterval(()=>{refreshReminders();renderAll()},5*60*1000);
-    document.addEventListener('visibilitychange',()=>{if(!document.hidden){refreshReminders();renderAll()}});
+    setInterval(()=>{refreshReminders();renderAll();cloudRecordStudentActivity().catch(e=>console.warn('Could not record student activity:',e))},5*60*1000);
+    setInterval(()=>{if(S.student.isAdmin&&ui.route.name==='students'&&Class.peopleStatus==='ready')fetchStudents().then(()=>renderView()).catch(e=>console.warn('Could not refresh last-active data:',e))},60*1000);
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden){refreshReminders();renderAll();cloudRecordStudentActivity().catch(e=>console.warn('Could not record student activity:',e))}});
     try{
       await withTimeout(initClass(),10000,'Shared class initialization timed out.');
       renderAll();
