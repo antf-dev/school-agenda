@@ -255,9 +255,15 @@ a{color:inherit;text-decoration:none}
 .hbars{display:grid;gap:12px}
 .hb{display:grid;grid-template-columns:130px minmax(0,1fr) 52px;gap:10px;align-items:center;font-size:14px}
 .hb span:last-child{text-align:right;color:var(--muted);font-weight:600}
-.seg{display:inline-flex;background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:3px}
-.seg button{border:0;background:transparent;padding:5px 12px;border-radius:9px;color:var(--muted);font-weight:600;font-size:13px}
-.seg button.on{background:var(--card2);color:var(--text)}
+.seg{display:flex;width:100%;background:var(--bg2);border:1px solid var(--line);border-radius:15px;padding:4px;gap:4px;box-sizing:border-box}
+.seg button{flex:1;min-width:0;min-height:44px;border:0;background:transparent;padding:9px 12px;border-radius:11px;color:var(--muted);font-weight:700;font-size:15px;line-height:1;cursor:pointer;transition:background .16s ease,color .16s ease,box-shadow .16s ease}
+.seg button.on{background:var(--card2);color:var(--text);box-shadow:0 1px 4px rgba(0,0,0,.22)}
+.auth-tabs{margin-bottom:18px}
+.auth-submit{width:100%;min-height:48px;font-size:16px}
+@media(max-width:560px){
+  .boot-card.auth-card{width:min(460px,calc(100vw - 24px))!important;padding:20px!important;border-radius:20px!important}
+  .auth-tabs .seg button{min-height:48px;font-size:15px}
+}
 
 .photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;padding:4px 0 6px}
 .photo-tile{display:grid;gap:7px;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:8px;color:var(--text)}
@@ -646,7 +652,7 @@ async function cloudOwnProfile(userArg=null){
   if(error)throw error;
   return data||null;
 }
-async function studentAuth(action,body={}){if(!SUPABASE_CONFIGURED||!supabaseClient)throw new Error('Shared account features are not configured yet.');const {data,error}=await supabaseClient.functions.invoke('student-auth',{body:{action,...body}});if(error)throw error;if(!data?.ok)throw new Error(data?.message||'Account action failed.');return data}
+async function studentAuth(action,body={}){if(!SUPABASE_CONFIGURED||!supabaseClient)throw new Error('Shared account features are not configured yet.');const {data,error}=await supabaseClient.functions.invoke('student-auth',{body:{action,...body}});if(error){let detail='';try{const payload=await error.context?.json?.();detail=payload?.message||payload?.error||''}catch(_){ }throw new Error(detail||error.message||'The account service could not complete that request.')}if(!data?.ok)throw new Error(data?.message||'Account action failed.');return data}
 async function cloudSetPassword(password){const user=await ensureSupabaseUser();if(!user)throw new Error(SUPABASE_AUTH_LAST_ERROR||'No active student session.');if(String(password||'').length<8)throw new Error('Password must be at least 8 characters.');await studentAuth('set-password',{password});S.student.hasPassword=true;P.student();return true}
 async function cloudLogin(name,className,password){const data=await studentAuth('login',{name,className,password});if(!data.session?.access_token||!data.session?.refresh_token)throw new Error('The login response was incomplete.');const {error}=await supabaseClient.auth.setSession({access_token:data.session.access_token,refresh_token:data.session.refresh_token});if(error)throw error;SUPABASE_CACHED_USER=(await supabaseClient.auth.getUser()).data.user||null;return data.profile||null}
 async function cloudSyncProgress(){if(!supabaseClient||!S.student.profileComplete||!S.student.id||S.student.id==='student')return null;try{const {data,error}=await supabaseClient.rpc('update_student_progress',{p_total_xp:Math.max(0,Math.floor(Number(S.student.totalXP)||0)),p_level:levelInfo(S.student.totalXP).level});if(error)throw error;return data||null}catch(e){console.warn('Could not sync student progress:',e);return null}}
@@ -2353,16 +2359,16 @@ document.addEventListener('input',e=>{
 /* ----- First-run profile setup ----- */
 function showSetup(){
   const bootEl=$('#boot');
-  bootEl.innerHTML='<div class="boot-card" style="width:min(460px,calc(100vw - 32px));text-align:left;background:var(--card);border:1px solid var(--line);border-radius:22px;padding:24px;box-shadow:var(--shadow);justify-items:stretch">'+
+  bootEl.innerHTML='<div class="boot-card auth-card" style="width:min(460px,calc(100vw - 32px));text-align:left;background:var(--card);border:1px solid var(--line);border-radius:22px;padding:24px;box-shadow:var(--shadow);justify-items:stretch">'+
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:18px"><div class="brand" style="padding:0"><i>✦</i>Agenda</div></div>'+
     '<h2 style="color:var(--text);font-size:28px;margin-bottom:5px">School Agenda</h2><p style="color:var(--muted);margin-bottom:18px">Create your student account or log back in.</p>'+
-    '<div class="seg" style="margin-bottom:16px"><button type="button" id="authnew" class="on">Create account</button><button type="button" id="authlogin">Log in</button></div>'+
+    '<div class="auth-tabs"><div class="seg"><button type="button" id="authnew" class="on">Create account</button><button type="button" id="authlogin">Log in</button></div></div>'+
     '<form id="setupform" style="display:grid;gap:12px">'+
       '<label class="field"><span>Name</span><input class="inp" id="setupname" maxlength="40" placeholder="Your name" required></label>'+
       '<label class="field"><span>Class</span><select class="sel" id="setupclass" required><option value="" disabled selected>Select your class</option>'+ALLOWED_CLASSES.map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('')+'</select></label>'+
       '<label class="field"><span>Password</span><input class="inp" id="setuppassword" type="password" minlength="8" autocomplete="new-password" placeholder="At least 8 characters" required></label>'+
       '<label class="field" id="setupconfirmfield"><span>Confirm password</span><input class="inp" id="setupconfirm" type="password" minlength="8" autocomplete="new-password" required></label>'+
-      '<p id="setuperr" style="color:var(--bad);font-size:13px;margin-top:2px" role="alert"></p><button class="btn primary" type="submit" id="setupsubmit">Create account</button></form></div>';
+      '<p id="setuperr" style="color:var(--bad);font-size:13px;margin-top:2px" role="alert"></p><button class="btn primary" type="submit" id="setupsubmit" class="auth-submit">Create account</button></form></div>';
   const f=$('#setupform'),err=$('#setuperr'),newBtn=$('#authnew'),loginBtn=$('#authlogin'),confirmField=$('#setupconfirmfield'),confirmInput=$('#setupconfirm');let mode='create';
   function setMode(next){mode=next;newBtn.classList.toggle('on',mode==='create');loginBtn.classList.toggle('on',mode==='login');confirmField.hidden=mode==='login';confirmInput.required=mode==='create';$('#setupsubmit').textContent=mode==='create'?'Create account':'Log in';err.textContent=''}
   newBtn.onclick=()=>setMode('create');loginBtn.onclick=()=>setMode('login');
