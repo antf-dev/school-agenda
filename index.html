@@ -2,7 +2,7 @@
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Agenda – personal planner, tasks, XP and streaks · v10</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
@@ -50,6 +50,9 @@ a{color:inherit;text-decoration:none}
 
 /* boot */
 .boot{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg);z-index:100}
+.boot.auth-screen{inset:var(--auth-vtop,0px) 0 auto;height:var(--auth-vh,100vh);height:var(--auth-vh,100dvh);place-items:safe center;overflow-y:auto;overscroll-behavior:contain;padding:calc(12px + env(safe-area-inset-top,0px)) 12px calc(12px + env(safe-area-inset-bottom,0px));-webkit-overflow-scrolling:touch}
+.boot.auth-screen .auth-card{max-height:calc(var(--auth-vh,100dvh) - 24px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.boot.auth-screen .auth-card input,.boot.auth-screen .auth-card select{scroll-margin-block:16px}
 .boot-card{display:grid;gap:14px;justify-items:center;color:var(--muted)}
 .boot-mark{width:38px;height:38px;border-radius:50%;border:3px solid var(--line2);border-top-color:var(--accent);animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -598,7 +601,7 @@ let SUPABASE_AUTH_LAST_ERROR='';
 function sharedError(e,fallback='Shared data could not be loaded.'){
   const raw=String(e?.message||e?.details||e?.hint||SUPABASE_AUTH_LAST_ERROR||'').trim();
   if(e?.code==='23505'||/already in use|duplicate.*name|name.*already.*used/i.test(raw)){
-    return '';
+    return 'An account with these details may already exist. Try logging in, or ask your teacher to check the student list.';
   }
   return raw||fallback;
 }
@@ -709,7 +712,7 @@ async function cloudUploadImage(data,path){
     const processed=await processImage(source);
     source=processed.blob;
   }catch(e){
-    if((source?.size||0)>900*1024)throw new Error('That photo is too large to share. Please choose a smaller image.');
+    throw new Error(e?.message||'This browser could not prepare the photo for sharing. Choose a JPG or PNG copy and try again.');
   }
   const {error}=await supabaseClient.storage.from(SUPABASE_BUCKET).upload(path,source,{
     contentType:'image/jpeg',upsert:true,cacheControl:'3600'
@@ -1037,10 +1040,11 @@ function dataUrlToBlob(u){const [h,b]=u.split(',');const mime=/data:([^;]+)/.exe
 const canvasBlob=(c,type,q)=>new Promise(res=>c.toBlob(res,type,q));
 function imageFileSupported(file){
   const type=String(file?.type||'').toLowerCase();
-  if(/^image\/(jpeg|jpg|png|webp)$/.test(type))return true;
+  if(type.startsWith('image/')&&type!=='image/svg+xml')return true;
   const name=String(file?.name||'').toLowerCase();
-  return /\.(jpe?g|png|webp)$/.test(name);
+  return /\.(jpe?g|png|webp|heic|heif|avif|bmp|gif|tiff?)$/.test(name);
 }
+const MAX_AGENDA_IMAGE_BYTES=20*1024*1024;
 async function loadBitmap(file){
   if(!file)throw new Error('No image file was selected.');
   try{
@@ -1058,7 +1062,8 @@ async function loadBitmap(file){
   }catch(e){throw e}
 }
 async function processImage(file){
-  if(!imageFileSupported(file))throw new Error('Please choose a JPG, PNG, or WEBP image.');
+  if(!imageFileSupported(file))throw new Error('Please choose an image file.');
+  if(Number(file.size)>MAX_AGENDA_IMAGE_BYTES)throw new Error('That image is larger than 20 MB. Choose a smaller image and try again.');
   const bmp=await loadBitmap(file);
   const w0=bmp.width||bmp.naturalWidth,h0=bmp.height||bmp.naturalHeight;
   if(!w0||!h0)throw new Error('The selected image has no readable dimensions.');
@@ -1076,13 +1081,16 @@ async function processImage(file){
   return{blob,dataUrl:await readAsDataURL(blob),thumb:small.toDataURL('image/jpeg',.72),width:big.width,height:big.height};
 }
 async function storeImage(file,kind,extra={}){
+  if(Number(file?.size)>MAX_AGENDA_IMAGE_BYTES)throw new Error('That image is larger than 20 MB. Choose a smaller image and try again.');
   let p;
   try{
     p=await processImage(file);
   }catch(err){
     /* Keep upload functionality working even when a browser cannot draw/convert
        a particular supported image. Store the original file/data instead. */
-    if(!imageFileSupported(file))throw err;
+    const originalType=String(file?.type||'').toLowerCase(),originalName=String(file?.name||'').toLowerCase();
+    const fallbackSafe=/^image\/(jpeg|png|webp)$/.test(originalType)||/\.(jpe?g|png|webp)$/.test(originalName);
+    if(!fallbackSafe)throw new Error(err?.message||'This image format is not supported by your browser. Choose a JPG or PNG copy.');
     const dataUrl=await readAsDataURL(file);
     let thumb=dataUrl;
     try{
@@ -1632,8 +1640,8 @@ function openUploadFlow(){
   const err=c=>({not_granted:'Automatic reading was declined, so fill in the details by hand.',unavailable:'Automatic reading isn\u2019t available here, so fill in the details by hand.',images_unavailable:'Automatic reading can\u2019t use images here, so fill in the details by hand.',rate_limited:'Too many requests right now. Fill in the details by hand, or try again in a moment.',image_rejected:'That image couldn\u2019t be read. Fill in the details by hand.',sampling_disabled:'Automatic reading is turned off for this account.'}[c]||'Couldn\u2019t read this photo automatically. Fill in what you see.');
   const newDet=(o={})=>({k:uid('d'),subjectId:'',title:'',description:'',dueDate:'',dueTime:'',difficulty:'medium',confidence:'',added:false,removed:false,...o});
   function stepPick(){
-    body.innerHTML=`<div class="drop" id="drop">${ico('image',34)}<b style="color:var(--text);font-size:17px">Choose or drop photos here</b><span>JPG, PNG or WEBP. You can select multiple photos at once.</span>
-      <button type="button" class="btn primary" id="choosephotos" style="margin-top:6px">${ico('image',16)}Choose photos</button><input id="imgin" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple hidden></div>
+    body.innerHTML=`<div class="drop" id="drop">${ico('image',34)}<b style="color:var(--text);font-size:17px">Choose or drop photos here</b><span>Choose photos from this device or a connected file provider. Up to 10 photos, 20 MB each.</span>
+      <button type="button" class="btn primary" id="choosephotos" style="margin-top:6px">${ico('image',16)}Choose photos</button><input id="imgin" type="file" accept="image/*,.heic,.heif,.avif" multiple hidden></div>
       <p class="hint" style="margin-top:12px">${U.aiOff?'Automatic reading is off. You\u2019ll type the details next to each photo.':'We\u2019ll try to read each photo and suggest the subject, task and date. Nothing is added until you confirm it.'}</p>`;
     foot.innerHTML=`<button class="btn" data-close>Cancel</button>`;
     const inp=$('#imgin',body),drop=$('#drop',body),choose=$('#choosephotos',body);
@@ -1643,8 +1651,10 @@ function openUploadFlow(){
     drop.ondrop=e=>{e.preventDefault();drop.classList.remove('over');const files=[...e.dataTransfer.files];if(files.length)handle(files);};
   }
   async function handle(files){
-    files=files.filter(imageFileSupported);
-    if(!files.length)return toast('Choose JPG, PNG or WEBP images.',{kind:'bad'});
+    const rejected=files.filter(f=>!imageFileSupported(f)||Number(f.size)>MAX_AGENDA_IMAGE_BYTES);
+    files=files.filter(f=>imageFileSupported(f)&&Number(f.size)<=MAX_AGENDA_IMAGE_BYTES);
+    if(rejected.length)toast(`${rejected.length} file${rejected.length===1?' was':'s were'} skipped. Choose readable image files up to 20 MB each.`,{kind:'bad',ms:5500});
+    if(!files.length)return toast('No supported photos were selected. Choose an image up to 20 MB.',{kind:'bad'});
     if(files.length>10){files=files.slice(0,10);toast('Only the first 10 photos were selected.',{kind:'bad',ms:4500});}
     U.busy=true;U.items=files.map(f=>({file:f,status:'wait',dets:[],meta:null,dataUrl:'',msg:''}));renderReview();
     for(const it of U.items){
@@ -1658,7 +1668,7 @@ function openUploadFlow(){
             it.meta.ocr={engine:'claude',status:'failed',error:c||'error',at:new Date().toISOString()};it.dets=[newDet()];it.status='manual';it.msg=err(c)}
         }else{it.dets=[newDet()];it.status='manual';it.msg=''}
         S.files[it.meta.id]=it.meta;P.file(it.meta,it.dataUrl);
-      }catch(e){it.status='fail';it.msg='This image couldn\u2019t be opened. Try a JPG or PNG.'}
+      }catch(e){it.status='fail';it.msg=e?.message||'This image could not be opened. Try a JPG or PNG copy.'}
       renderReview();
     }
     U.busy=false;renderReview();
@@ -2072,7 +2082,7 @@ function imagePathList(post){
   if(a.length)return [...new Set(a)];
   return post?.imagePath?[String(post.imagePath)]:[];
 }
-async function classCreate(d,shareImage=null,imagePathOverride=null,targetClassName=null){
+async function classCreate(d,shareImage=null,imagePathOverride=null,targetClassName=null,onUploadProgress=null){
   if(!supabaseClient)throw{code:'not_configured'}; await ensureClassCloudReady();
   const target=normalizeClassName(targetClassName||Class.className).slice(0,40);
   if(!ALLOWED_CLASSES.includes(target))throw new Error('Please choose a valid class.');
@@ -2080,7 +2090,8 @@ async function classCreate(d,shareImage=null,imagePathOverride=null,targetClassN
   const incoming=Array.isArray(shareImage)?shareImage.filter(Boolean):(shareImage?[shareImage]:[]);
   let imagePaths=Array.isArray(imagePathOverride)?imagePathOverride.filter(Boolean).map(String):(imagePathOverride?[String(imagePathOverride)]:[]);
   try{
-    if(incoming.length){imagePaths=[];for(let i=0;i<incoming.length;i++){const path=targetKey+'/'+Class.me+'/post-'+id+'-'+(i+1)+'.jpg';await cloudUploadImage(incoming[i],path);imagePaths.push(path)}}
+    if(incoming.length){imagePaths=[];for(let i=0;i<incoming.length;i++){onUploadProgress?.(i+1,incoming.length);const path=targetKey+'/'+Class.me+'/post-'+id+'-'+(i+1)+'.jpg';await cloudUploadImage(incoming[i],path);imagePaths.push(path)}}
+    onUploadProgress?.('Saving post');
     const s=subj(d.subjectId);
     const {data,error}=await supabaseClient.rpc('create_class_agenda_post',{
       p_id:id,p_target_class_name:target,p_subject_name:s.name,p_subject_icon:s.icon,p_subject_accent:s.accent,
@@ -2093,7 +2104,7 @@ async function classCreate(d,shareImage=null,imagePathOverride=null,targetClassN
 }
 
 
-async function classUpdate(post,d,{newImage,removeImage}={}){
+async function classUpdate(post,d,{newImage,removeImage,onUploadProgress}={}){
   if(!supabaseClient)throw{code:'not_configured'};
   await ensureClassCloudReady();
   const oldPaths=imagePathList(post);
@@ -2102,12 +2113,14 @@ async function classUpdate(post,d,{newImage,removeImage}={}){
   if(incoming.length){
     imagePaths=[];
     for(let i=0;i<incoming.length;i++){
+      onUploadProgress?.(i+1,incoming.length);
       const path=`${post.classKey||Class.classKey}/${Class.me}/post-${post.id}-${Date.now()}-${i+1}.jpg`;
       await cloudUploadImage(incoming[i],path);
       imagePaths.push(path);newPaths.push(path);
     }
   }else if(removeImage){imagePaths=[]}
   const s=subj(d.subjectId);
+  onUploadProgress?.('Saving post');
   /* Use the server-side ownership/class check for updates. This avoids the
      fragile client-side table UPDATE path that was producing a false
      "permission to change that shared post" error even for an admin/owner. */
@@ -2215,20 +2228,20 @@ function openClassForm(post=null){
     <label class="field"><span>Priority</span><select class="sel" name="priority">${opt(PRIO,d.priority)}</select></label>
     <label class="field"><span>Difficulty</span><select class="sel" name="difficulty">${opt(DIFF,d.difficulty)}</select></label>
     <label class="field full"><span>Notes (optional)</span><textarea class="txt" name="notes">${esc(d.notes)}</textarea></label>
-    <div class="field full"><span>Agenda photos (optional)</span><button type="button" class="btn sm" id="choosepostphotos">${ico('image',14)}Choose photos</button><input type="file" name="photo" id="postphoto" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple hidden><span class="hint" id="photohint">You can select multiple photos at once.</span>
+    <div class="field full"><span>Agenda photos (optional)</span><button type="button" class="btn sm" id="choosepostphotos">${ico('image',14)}Choose photos</button><input type="file" name="photo" id="postphoto" accept="image/*,.heic,.heif,.avif" multiple hidden><span class="hint" id="photohint">Choose up to 10 photos, 20 MB each. Android file providers are supported.</span>
       ${editing&&imagePathList(post).length?`<label class="row" style="cursor:pointer"><input type="checkbox" name="rmphoto"> <span>Remove the current photo(s)</span></label>`:''}</div>
     <p id="cerr" style="color:var(--bad);font-size:13.5px;grid-column:1/-1" role="alert"></p></div>
     <p class="hint">Shared posts are visible only to students in their target class.</p>
     <div class="mf" style="padding:8px 0 0"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn primary" id="csubmit">${editing?'Save changes':'Post to selected class(es)'}</button></div></form>`,{cls:'wide',locked:true});
   const form=m.el.querySelector('#cform'),postPhoto=m.el.querySelector('#postphoto'),choosePostPhotos=m.el.querySelector('#choosepostphotos'),photoHint=m.el.querySelector('#photohint');
-  if(choosePostPhotos&&postPhoto){choosePostPhotos.onclick=()=>{postPhoto.value='';postPhoto.click()};postPhoto.addEventListener('change',()=>{const files=[...postPhoto.files].filter(imageFileSupported);photoHint.textContent=files.length?`${files.length} photo${files.length===1?'':'s'} selected.`:'You can select multiple photos at once.'})}
+  if(choosePostPhotos&&postPhoto){choosePostPhotos.onclick=()=>{postPhoto.value='';postPhoto.click()};postPhoto.addEventListener('change',()=>{const files=[...postPhoto.files],valid=files.filter(f=>imageFileSupported(f)&&Number(f.size)<=MAX_AGENDA_IMAGE_BYTES),skipped=files.length-valid.length;photoHint.textContent=valid.length?`${valid.length} photo${valid.length===1?'':'s'} selected.${skipped?` ${skipped} unsupported or over 20 MB; reselect smaller supported images.`:''}`:'No photos selected. Choose browser-readable image files up to 20 MB.';photoHint.style.color=skipped?'var(--bad)':''})}
   form.addEventListener('submit',async e=>{
     e.preventDefault();const f=form.elements,v={type:f.type.value,subjectId:f.subjectId.value,title:f.title.value,description:f.description.value,dueDate:f.dueDate.value,dueTime:f.dueTime.value,priority:f.priority.value,difficulty:f.difficulty.value,notes:f.notes.value};
     const targets=editing?[normalizeClassName(post.className)]:[...form.elements.targetClass.selectedOptions].map(x=>normalizeClassName(x.value)).filter(x=>ALLOWED_CLASSES.includes(x));
     const err=!v.title.trim()?'Give it a title.':!parseYmd(v.dueDate)?'Choose a due date.':!targets.length?'Select at least one class.':'';$('#cerr',m.el).textContent=err;if(err)return;
     const btn=$('#csubmit',m.el);btn.disabled=true;btn.textContent=editing?'Saving…':'Posting…';
-    try{const files=[...(f.photo?.files||[])].filter(imageFileSupported);if(files.length>10)throw new Error('You can upload up to 10 photos per post.');
-      if(editing)await classUpdate(post,v,{newImage:files,removeImage:!!(f.rmphoto&&f.rmphoto.checked)});else for(const target of targets)await classCreate(v,files,null,target);
+    try{const selected=[...(f.photo?.files||[])];if(selected.length>10)throw new Error('You can upload up to 10 photos per post.');if(selected.some(file=>!imageFileSupported(file)))throw new Error('One or more selected files are not supported images. Choose a readable photo from your device or Files app.');if(selected.some(file=>Number(file.size)>MAX_AGENDA_IMAGE_BYTES))throw new Error('Each photo must be 20 MB or smaller. Choose smaller images and try again.');const files=selected;
+      if(editing)await classUpdate(post,v,{newImage:files,removeImage:!!(f.rmphoto&&f.rmphoto.checked),onUploadProgress:(step,total)=>{btn.textContent=typeof step==='string'?`${step}…`:`Uploading photo ${step} of ${total}…`}});else for(const target of targets)await classCreate(v,files,null,target,(step,total)=>{btn.textContent=typeof step==='string'?`${step}…`:`Uploading photo ${step} of ${total}…`});
       closeModal(m);toast(editing?'Post updated':`Posted to ${targets.length} class${targets.length===1?'':'es'}`);
     }catch(e2){$('#cerr',m.el).textContent=classError(e2);btn.disabled=false;btn.textContent=editing?'Save changes':'Post to selected class(es)'}
   });
@@ -2363,18 +2376,24 @@ document.addEventListener('input',e=>{
 /* ----- First-run profile setup ----- */
 function showSetup(){
   const bootEl=$('#boot');
+  bootEl.classList.add('auth-screen');
+  bootEl._authViewportCleanup?.();
+  const syncAuthViewport=()=>{const vv=window.visualViewport;if(vv){bootEl.style.setProperty('--auth-vh',`${vv.height}px`);bootEl.style.setProperty('--auth-vtop',`${vv.offsetTop}px`)}else{bootEl.style.setProperty('--auth-vh',`${window.innerHeight}px`);bootEl.style.setProperty('--auth-vtop','0px')}};
+  syncAuthViewport();window.visualViewport?.addEventListener('resize',syncAuthViewport);window.visualViewport?.addEventListener('scroll',syncAuthViewport);window.addEventListener('resize',syncAuthViewport,{passive:true});
+  bootEl._authViewportCleanup=()=>{window.visualViewport?.removeEventListener('resize',syncAuthViewport);window.visualViewport?.removeEventListener('scroll',syncAuthViewport);window.removeEventListener('resize',syncAuthViewport)};
   bootEl.innerHTML='<div class="boot-card auth-card" style="width:min(460px,calc(100vw - 32px));text-align:left;background:var(--card);border:1px solid var(--line);border-radius:22px;padding:24px;box-shadow:var(--shadow);justify-items:stretch">'+
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:18px"><div class="brand" style="padding:0"><i>✦</i>Agenda</div></div>'+
     '<h2 style="color:var(--text);font-size:28px;margin-bottom:5px">School Agenda</h2><p style="color:var(--muted);margin-bottom:18px">Create your student account or log back in.</p>'+
     '<div class="auth-tabs"><div class="seg"><button type="button" id="authnew" class="on">Create account</button><button type="button" id="authlogin">Log in</button></div></div>'+
-    '<form id="setupform" style="display:grid;gap:12px">'+
-      '<label class="field"><span>Name</span><input class="inp" id="setupname" maxlength="40" placeholder="Your name" required></label>'+
-      '<label class="field"><span>Class</span><select class="sel" id="setupclass" required><option value="" disabled selected>Select your class</option>'+ALLOWED_CLASSES.map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('')+'</select></label>'+
-      '<label class="field"><span>Password</span><input class="inp" id="setuppassword" type="password" minlength="8" autocomplete="new-password" placeholder="At least 8 characters" required></label>'+
-      '<label class="field" id="setupconfirmfield"><span>Confirm password</span><input class="inp" id="setupconfirm" type="password" minlength="8" autocomplete="new-password" required></label>'+
-      '<p id="setuperr" style="color:var(--bad);font-size:13px;margin-top:2px" role="alert"></p><button class="btn primary" type="submit" id="setupsubmit" class="auth-submit">Create account</button></form></div>';
-  const f=$('#setupform'),err=$('#setuperr'),newBtn=$('#authnew'),loginBtn=$('#authlogin'),confirmField=$('#setupconfirmfield'),confirmInput=$('#setupconfirm');let mode='create';
-  function setMode(next){mode=next;newBtn.classList.toggle('on',mode==='create');loginBtn.classList.toggle('on',mode==='login');confirmField.hidden=mode==='login';confirmInput.required=mode==='create';$('#setupsubmit').textContent=mode==='create'?'Create account':'Log in';err.textContent=''}
+    '<form id="setupform" autocomplete="on" style="display:grid;gap:12px">'+
+      '<label class="field"><span>Name</span><input class="inp" id="setupname" name="username" autocomplete="username" autocapitalize="words" autocorrect="off" enterkeyhint="next" maxlength="40" placeholder="Your name" required></label>'+
+      '<label class="field"><span>Class</span><select class="sel" id="setupclass" name="className" autocomplete="off" required><option value="" disabled selected>Select your class</option>'+ALLOWED_CLASSES.map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('')+'</select></label>'+
+      '<label class="field"><span>Password</span><input class="inp" id="setuppassword" name="password" type="password" minlength="8" autocomplete="new-password" enterkeyhint="next" placeholder="At least 8 characters" required></label>'+
+      '<label class="field" id="setupconfirmfield"><span>Confirm password</span><input class="inp" id="setupconfirm" name="confirmPassword" type="password" minlength="8" autocomplete="new-password" enterkeyhint="done" required></label>'+
+      '<p id="setuperr" style="color:var(--bad);font-size:13px;margin-top:2px" role="alert" aria-live="polite"></p><button class="btn primary auth-submit" type="submit" id="setupsubmit">Create account</button></form></div>';
+  const f=$('#setupform'),err=$('#setuperr'),newBtn=$('#authnew'),loginBtn=$('#authlogin'),confirmField=$('#setupconfirmfield'),confirmInput=$('#setupconfirm'),passwordInput=$('#setuppassword');let mode='create';
+  f.addEventListener('focusin',e=>{if(e.target.matches('input,select'))setTimeout(()=>e.target.scrollIntoView({block:'nearest',behavior:'smooth'}),250)});
+  function setMode(next){mode=next;newBtn.classList.toggle('on',mode==='create');loginBtn.classList.toggle('on',mode==='login');confirmField.hidden=mode==='login';confirmInput.required=mode==='create';passwordInput.autocomplete=mode==='create'?'new-password':'current-password';passwordInput.setAttribute('enterkeyhint',mode==='create'?'next':'go');$('#setupsubmit').textContent=mode==='create'?'Create account':'Log in';err.textContent=''}
   newBtn.onclick=()=>setMode('create');loginBtn.onclick=()=>setMode('login');
   f.onsubmit=async e=>{e.preventDefault();const name=$('#setupname').value.trim(),cls=normalizeClassName($('#setupclass').value),pw=$('#setuppassword').value;if(!name||!cls){err.textContent='Enter your name and class.';return}if(pw.length<8){err.textContent='Password must be at least 8 characters.';return}if(mode==='create'&&pw!==confirmInput.value){err.textContent='Passwords do not match.';return}
     const submit=$('#setupsubmit');submit.disabled=true;submit.textContent=mode==='create'?'Creating…':'Logging in…';err.textContent='';
@@ -2384,9 +2403,10 @@ function showSetup(){
       else{const user=await ensureSupabaseUser();if(!user)throw new Error(SUPABASE_AUTH_LAST_ERROR||'Could not create your student session.');p=await cloudRegisterStudent(name,cls,user);if(!p)throw new Error('Your profile could not be saved.');await cloudSetPassword(pw);}
       S.student.id=p.id;S.student.name=String(p.name||name).slice(0,40);S.student.className=normalizeClassName(p.class_name||cls).slice(0,40);S.student.isAdmin=!!p.is_admin;S.student.hasPassword=mode==='create'?true:!!p.has_password;S.student.profileComplete=true;
       if(Number(p.total_xp||0)>S.student.totalXP){S.student.totalXP=Number(p.total_xp);S.student.level=Number(p.level||levelInfo(S.student.totalXP).level)}
-      await P.student();await cloudSyncProgress();const hp=location.hash.replace(/^#\/?/,'')||'dashboard';ui.routeStr=hp;ui.route=parseRoute(hp);shell();checkAchievements();refreshReminders();await initClass();$('#boot').remove();$('#app').hidden=false;renderAll();
+      await P.student();await cloudSyncProgress();const hp=location.hash.replace(/^#\/?/,'')||'dashboard';ui.routeStr=hp;ui.route=parseRoute(hp);shell();checkAchievements();refreshReminders();await initClass();bootEl._authViewportCleanup?.();$('#boot').remove();$('#app').hidden=false;renderAll();
     }catch(e2){console.error('Account action failed:',e2);err.textContent=sharedError(e2,mode==='create'?'Could not create your account.':'Could not log you in.')}finally{submit.disabled=false;submit.textContent=mode==='create'?'Create account':'Log in'}
-  };setTimeout(()=>$('#setupname')?.focus(),30);
+  };
+  if(!window.matchMedia('(pointer: coarse)').matches)setTimeout(()=>$('#setupname')?.focus({preventScroll:true}),30);
 }
 
 /* =====================================================================
@@ -2466,3 +2486,4 @@ boot();
 </script>
 </body>
 </html>
+
