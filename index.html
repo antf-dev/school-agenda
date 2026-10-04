@@ -2393,57 +2393,73 @@ function showSetup(){
    14. BOOT
    ===================================================================== */
 async function boot(){
-  Cap.get('downloads');Cap.get('sample');                                  /* warm up optional capabilities */
-  try{
-    await Data.open();
-    try{Data.bc=new BroadcastChannel('school-agenda');Data.bc.onmessage=async()=>{if(Data.pending)return;try{await loadState();renderAll()}catch(e){}}}catch(e){}
-  }catch(e){console.error(e);S.memoryOnly=true;Data.ok=false}
-  try{
-    if(Data.ok)await loadState();
-    else{S.subjects=seedSubjects();applyTheme()}
-  }catch(e){
-    console.error(e);
-    /* Never replace unreadable saved data with blank defaults. */
-    $('#boot').innerHTML=`<div class="boot-card" style="max-width:420px;text-align:center;padding:20px"><h2 style="color:var(--text)">Couldn\u2019t open your saved agenda</h2><p>Your data hasn\u2019t been changed. Close other tabs of this page and reload. If it keeps happening, your browser may be restricting storage.</p><button class="btn primary" onclick="location.reload()">Reload</button></div>`;
-    return;
-  }
-  if(!S.student.profileComplete){showSetup();return}
-  if(SUPABASE_CONFIGURED){
-    try{
-      const user=await withTimeout(ensureSupabaseUser(),8000,'Supabase authentication timed out.');
-      if(!user){
-        /* Keep personal data usable, but surface the cloud/auth problem instead of blocking the app. */
-        console.warn('Shared cloud authentication is unavailable:',SUPABASE_AUTH_LAST_ERROR);
-      }else{
-        const p=await withTimeout(cloudOwnProfile(user),8000,'Cloud profile restore timed out.');
-        if(p){
-          S.student.id=p.id;S.student.name=String(p.name||S.student.name).slice(0,40);
-          S.student.className=normalizeClassName(p.class_name||S.student.className).slice(0,40);
-          S.student.isAdmin=!!p.is_admin;S.student.hasPassword=!!p.has_password;S.student.profileComplete=true;
-          if(Number(p.total_xp||0)>S.student.totalXP){S.student.totalXP=Number(p.total_xp);S.student.level=Number(p.level||levelInfo(S.student.totalXP).level)} else if(S.student.totalXP>Number(p.total_xp||0))await cloudSyncProgress();
-          P.student();
-        }
-      }
-    }catch(e){SUPABASE_AUTH_LAST_ERROR=sharedError(e,'Could not restore the shared cloud profile.');console.error('Cloud profile restore failed:',e)}
-  }
-  const hp=location.hash.replace(/^#\/?/,'')||'dashboard';ui.routeStr=hp;ui.route=parseRoute(hp);
+  Cap.get('downloads');Cap.get('sample');
+  const bootEl=$('#boot');
+  const appEl=$('#app');
+  /* Paint the application shell immediately. Storage/cloud work must never
+     be allowed to block the first visible render on mobile Safari. */
+  const hp=location.hash.replace(/^#\\/?/,'')||'dashboard';
+  ui.routeStr=hp;ui.route=parseRoute(hp);
   shell();
-  checkAchievements();refreshReminders();
-  /* Never keep the entire app behind the boot screen while a cloud request is slow.
-     Personal IndexedDB data is ready; Class Agenda can finish initializing in the background. */
-  $('#boot').remove();$('#app').hidden=false;
+  bootEl.hidden=true;
+  appEl.hidden=false;
   renderAll();
-  setInterval(()=>{refreshReminders();renderAll()},5*60*1000);
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden){refreshReminders();renderAll()}});
-  try{
-    await withTimeout(initClass(),10000,'Shared class initialization timed out.');
+
+  const finishSetup=()=>{bootEl.hidden=false;showSetup()};
+  const continueAfterStorage=async()=>{
+    try{
+      await Data.open();
+      try{Data.bc=new BroadcastChannel('school-agenda');Data.bc.onmessage=async()=>{if(Data.pending)return;try{await loadState();renderAll()}catch(e){console.error(e)}}}catch(e){}
+    }catch(e){
+      console.error('IndexedDB open failed:',e);
+      S.memoryOnly=true;Data.ok=false;
+      S.subjects=seedSubjects();applyTheme();renderAll();
+    }
+    try{
+      if(Data.ok)await loadState();
+      else if(!S.subjects.length){S.subjects=seedSubjects();applyTheme()}
+    }catch(e){
+      console.error('Saved agenda restore failed:',e);
+      /* Do not overwrite or replace saved records. Keep the app usable and
+         leave the existing boot screen available as an explicit recovery UI. */
+      S.memoryOnly=!Data.ok;
+      renderAll();
+      return;
+    }
     renderAll();
-  }catch(e){
-    Class.status='error';
-    Class.lastError=sharedError(e,'Could not initialize shared class data.');
-    console.error('Shared class initialization failed:',e);
-    renderAll();
-  }
+    if(!S.student.profileComplete){finishSetup();return}
+
+    if(SUPABASE_CONFIGURED){
+      try{
+        const user=await withTimeout(ensureSupabaseUser(),8000,'Supabase authentication timed out.');
+        if(user){
+          const p=await withTimeout(cloudOwnProfile(user),8000,'Cloud profile restore timed out.');
+          if(p){
+            S.student.id=p.id;S.student.name=String(p.name||S.student.name).slice(0,40);
+            S.student.className=normalizeClassName(p.class_name||S.student.className).slice(0,40);
+            S.student.isAdmin=!!p.is_admin;S.student.hasPassword=!!p.has_password;S.student.profileComplete=true;
+            if(Number(p.total_xp||0)>S.student.totalXP){S.student.totalXP=Number(p.total_xp);S.student.level=Number(p.level||levelInfo(S.student.totalXP).level)}
+            else if(S.student.totalXP>Number(p.total_xp||0))await cloudSyncProgress();
+            await P.student();
+            renderAll();
+          }
+        }
+      }catch(e){SUPABASE_AUTH_LAST_ERROR=sharedError(e,'Could not restore the shared cloud profile.');console.error('Cloud profile restore failed:',e);renderAll()}
+    }
+    checkAchievements();refreshReminders();
+    setInterval(()=>{refreshReminders();renderAll()},5*60*1000);
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden){refreshReminders();renderAll()}});
+    try{
+      await withTimeout(initClass(),10000,'Shared class initialization timed out.');
+      renderAll();
+    }catch(e){
+      Class.status='error';
+      Class.lastError=sharedError(e,'Could not initialize shared class data.');
+      console.error('Shared class initialization failed:',e);
+      renderAll();
+    }
+  };
+  continueAfterStorage();
 }
 window.__agenda={Class,S,A,Data,levelInfo,xpFor,getStreak,ui,go,checkAchievements};
 boot();
