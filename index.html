@@ -1484,14 +1484,14 @@ function viewStudents(){
   const passwordCount=(Class.people||[]).filter(p=>p.hasPassword).length;
   const totalXp=(Class.people||[]).reduce((sum,p)=>sum+(Number(p.totalXP)||0),0);
   return`<div class="page-h"><div><h1>Students</h1><p>Admin-only directory of every registered student, including password status, level and XP.</p></div><div class="row wrap"><span class="pill acc">${(Class.people||[]).length} students</span><span class="pill xp">${passwordCount} passwords set</span><span class="pill ok">${admins} admins</span></div></div>
-  ${Class.peopleStatus==='loading'?\`<div class="empty"><p>Loading registered students…</p></div>\`:
-    Class.peopleStatus==='error'?\`<div class="empty"><h3>Couldn’t load students</h3><p>Check the shared database connection and reload.</p></div>\`:
-    Class.peopleStatus==='off'?\`<div class="empty"><h3>Shared student list unavailable</h3><p>The admin student directory needs the shared database capability.</p></div>\`:\`
+  ${Class.peopleStatus==='loading'?`<div class="empty"><p>Loading registered students…</p></div>`:
+    Class.peopleStatus==='error'?`<div class="empty"><h3>Couldn’t load students</h3><p>Check the shared database connection and reload.</p></div>`:
+    Class.peopleStatus==='off'?`<div class="empty"><h3>Shared student list unavailable</h3><p>The admin student directory needs the shared database capability.</p></div>`:`
       <section class="card" style="margin-bottom:16px">
         <div class="row wrap between"><label class="search" style="max-width:420px">${ico('search',18)}<input id="peopleq" type="search" placeholder="Search students or classes…" autocomplete="off" value="${esc(ui.peopleQuery||'')}"></label><span class="muted">${people.length} shown · ${classes.length} class${classes.length===1?'':'es'} · ${fmtNum(totalXp)} total XP</span></div>
       </section>
-      ${people.length?\`<section class="card"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:720px"><thead><tr style="text-align:left;color:var(--muted);font-size:12px"><th style="padding:10px 8px">Student</th><th style="padding:10px 8px">Class</th><th style="padding:10px 8px">Password</th><th style="padding:10px 8px">Level</th><th style="padding:10px 8px">XP</th><th style="padding:10px 8px">Role</th></tr></thead><tbody>${people.map((p,i)=>\`<tr style="border-top:1px solid var(--line)"><td style="padding:12px 8px"><b>${esc(p.name)}</b></td><td style="padding:12px 8px;color:var(--muted)">${esc(p.className||'No class')}</td><td style="padding:12px 8px"><span class="pill ${p.hasPassword?'ok':'lo'}">${p.hasPassword?'Set':'Not set'}</span></td><td style="padding:12px 8px"><span class="pill acc">Lv ${Number(p.level)||1}</span></td><td style="padding:12px 8px"><span class="xpchip">${fmtNum(Number(p.totalXP)||0)} XP</span></td><td style="padding:12px 8px"><span class="pill ${p.isAdmin?'xp':'acc'}">${p.isAdmin?'Admin':'Student'}</span></td></tr>\`).join('')}</tbody></table></div></section>\`:
-      \`<div class="empty"><h3>No students found</h3><p>Try a different name or class.</p></div>\`}`}
+      ${people.length?`<section class="card"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:720px"><thead><tr style="text-align:left;color:var(--muted);font-size:12px"><th style="padding:10px 8px">Student</th><th style="padding:10px 8px">Class</th><th style="padding:10px 8px">Password</th><th style="padding:10px 8px">Level</th><th style="padding:10px 8px">XP</th><th style="padding:10px 8px">Role</th></tr></thead><tbody>${people.map((p,i)=>`<tr style="border-top:1px solid var(--line)"><td style="padding:12px 8px"><b>${esc(p.name)}</b></td><td style="padding:12px 8px;color:var(--muted)">${esc(p.className||'No class')}</td><td style="padding:12px 8px"><span class="pill ${p.hasPassword?'ok':'lo'}">${p.hasPassword?'Set':'Not set'}</span></td><td style="padding:12px 8px"><span class="pill acc">Lv ${Number(p.level)||1}</span></td><td style="padding:12px 8px"><span class="xpchip">${fmtNum(Number(p.totalXP)||0)} XP</span></td><td style="padding:12px 8px"><span class="pill ${p.isAdmin?'xp':'acc'}">${p.isAdmin?'Admin':'Student'}</span></td></tr>`).join('')}</tbody></table></div></section>`:
+      `<div class="empty"><h3>No students found</h3><p>Try a different name or class.</p></div>`}`}`}
 
 /* ----- Settings ----- */
 function sw(path,label,desc='',checked){return`<div class="set-row"><div>${label}${desc?`<small>${desc}</small>`:''}</div><label class="switch"><input type="checkbox" data-set="${path}" ${checked?'checked':''} aria-label="${esc(label)}"><span></span></label></div>`}
@@ -2398,7 +2398,7 @@ async function boot(){
   const appEl=$('#app');
   /* Paint the application shell immediately. Storage/cloud work must never
      be allowed to block the first visible render on mobile Safari. */
-  const hp=location.hash.replace(/^#\\/?/,'')||'dashboard';
+  const hp=location.hash.replace(/^#\/?/,'')||'dashboard';
   ui.routeStr=hp;ui.route=parseRoute(hp);
   shell();
   bootEl.hidden=true;
