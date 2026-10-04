@@ -2040,6 +2040,13 @@ async function cloudRecordStudentActivity(){
   const {error}=await supabaseClient.rpc('record_student_activity');
   if(error)throw error;
 }
+let studentActivityTrackingStarted=false;
+function startStudentActivityTracking(){
+  if(studentActivityTrackingStarted)return;
+  studentActivityTrackingStarted=true;
+  setInterval(()=>cloudRecordStudentActivity().catch(e=>console.warn('Could not record student activity:',e)),5*60*1000);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)cloudRecordStudentActivity().catch(e=>console.warn('Could not record student activity:',e))});
+}
 async function cloudAdminSetStudentClass(studentId,className){
   if(!supabaseClient||!S.student.isAdmin)throw new Error('Administrator access is required.');
   const target=normalizeClassName(className).slice(0,40);
@@ -2118,7 +2125,7 @@ async function initClass(){
       await fetchClassPosts();
     }
     Class.status='ready';
-    try{await cloudRecordStudentActivity()}catch(e){console.warn('Could not record student activity:',e)}
+    try{await cloudRecordStudentActivity();startStudentActivityTracking()}catch(e){console.warn('Could not record student activity:',e);startStudentActivityTracking()}
     if(S.student.isAdmin){try{Class.peopleStatus='loading';await fetchStudents()}catch(e){Class.peopleStatus='error';console.error('Could not load student directory:',e)}}
     else{Class.people=[];Class.peopleStatus='off'}
     startCloudWatchers();
@@ -2559,9 +2566,9 @@ async function boot(){
       }catch(e){SUPABASE_AUTH_LAST_ERROR=sharedError(e,'Could not restore the shared cloud profile.');console.error('Cloud profile restore failed:',e);renderAll()}
     }
     checkAchievements();refreshReminders();
-    setInterval(()=>{refreshReminders();renderAll();cloudRecordStudentActivity().catch(e=>console.warn('Could not record student activity:',e))},5*60*1000);
+    setInterval(()=>{refreshReminders();renderAll()},5*60*1000);
     setInterval(()=>{if(S.student.isAdmin&&ui.route.name==='students'&&Class.peopleStatus==='ready')fetchStudents().then(()=>renderView()).catch(e=>console.warn('Could not refresh last-active data:',e))},60*1000);
-    document.addEventListener('visibilitychange',()=>{if(!document.hidden){refreshReminders();renderAll();cloudRecordStudentActivity().catch(e=>console.warn('Could not record student activity:',e))}});
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden){refreshReminders();renderAll()}});
     try{
       await withTimeout(initClass(),10000,'Shared class initialization timed out.');
       renderAll();
