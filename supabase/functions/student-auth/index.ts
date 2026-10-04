@@ -6,7 +6,7 @@ const secrets=JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS")||"{}");
 const publishes=JSON.parse(Deno.env.get("SUPABASE_PUBLISHABLE_KEYS")||"{}");
 const secretKey=secrets.default||Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")||"";
 const publishableKey=publishes.default||Deno.env.get("SUPABASE_ANON_KEY")||"";
-const admin=createClient(url,secretKey,{auth:{autoRefreshToken:false,persistSession:false,detectSessionInUrl:false}});
+const admin=createClient(url,secretKey,{auth:{autoRefreshToken:false,persistSession:false,detectSessionInUrl:false},global:{headers:{Authorization:`Bearer ${secretKey}`}}});
 const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...cors,"Content-Type":"application/json"}});
 const clean=(v:string,max=40)=>String(v||"").trim().replace(/\s+/g," ").slice(0,max);
 const emailFor=(id:string)=>"student-"+id+"@accounts.school-agenda.local";
