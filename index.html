@@ -367,6 +367,60 @@ table.xp td:last-child{text-align:right;font-weight:700;color:var(--xp)}
   .cols-4{grid-template-columns:1fr 1fr}
   .lu{padding:28px 30px}
 }
+/* mobile / touch optimization */
+@media (max-width:860px){
+  html{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+  body{overflow-x:hidden}
+  button,a,select{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+  .topbar{padding:10px 0 12px;gap:8px}
+  .search{min-height:44px}
+  .search input{font-size:16px}
+  .iconbtn{min-width:44px;min-height:44px}
+  .btn{min-height:44px}
+  .btn.sm{min-height:40px}
+  .main{padding-left:12px;padding-right:12px}
+  .card{border-radius:16px;padding:15px}
+  .page-h{margin:4px 0 14px}
+  .page-h h1{font-size:25px}
+  .filters{overflow-x:auto;flex-wrap:nowrap;padding-bottom:3px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .filters::-webkit-scrollbar{display:none}
+  .chip{min-height:40px;display:inline-flex;align-items:center}
+  .fgrid{gap:10px}
+  .sel,.inp,.txt{font-size:16px;min-height:44px}
+  .txt{min-height:90px}
+  select.sel{font-size:16px}
+  .mf{padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));gap:8px}
+  .mf .btn{flex:1;min-width:0}
+  .modal{max-height:94dvh}
+  .mh{padding:14px 16px 6px}
+  .mb{padding:8px 16px 16px}
+  .class-target{min-height:46px}
+  .hw{padding:12px}
+  .check{width:34px;height:34px}
+}
+@media (max-width:560px){
+  .topbar{position:sticky}
+  .saved{font-size:11px}
+  .hero>div{padding:16px}
+  .hello b{font-size:23px}
+  .levelrow{gap:12px}
+  .ring{transform:scale(.92);transform-origin:left center}
+  .hw-title{font-size:16px}
+  .hw-desc{font-size:13.5px}
+  .hw-side .acts .iconbtn{width:40px;height:40px}
+  .cal{gap:3px}
+  .cal .dow{font-size:10px}
+  .day{min-height:54px;padding:3px}
+  .day .n{width:22px;height:22px;font-size:12px}
+  .dots i{font-size:0}
+  .dots i::before{width:7px;height:7px}
+  .subgrid,.achgrid{grid-template-columns:1fr}
+  .kpis{grid-template-columns:1fr 1fr}
+  .choice button{min-height:120px}
+  .drop{padding:24px 12px}
+  .notifpanel{top:calc(env(safe-area-inset-top,0px) + 58px)}
+  .toasts{bottom:calc(132px + env(safe-area-inset-bottom,0px))}
+}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 </style>
 </head>
