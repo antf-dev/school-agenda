@@ -2296,7 +2296,7 @@ function viewClass(){
     <label class="field" style="flex:1;min-width:145px;max-width:210px"><span>Due from</span><input class="inp" type="date" data-agenda-date="from" value="${esc(ui.agendaDateFrom)}" ${ui.agendaDateTo?`max="${esc(ui.agendaDateTo)}"`:''} aria-label="Due date from"></label>
     <label class="field" style="flex:1;min-width:145px;max-width:210px"><span>Due through</span><input class="inp" type="date" data-agenda-date="to" value="${esc(ui.agendaDateTo)}" ${ui.agendaDateFrom?`min="${esc(ui.agendaDateFrom)}"`:''} aria-label="Due date through"></label>
     ${dateFilterActive?`<button class="btn sm" data-act="agenda-dates-clear">Clear dates</button>`:''}</div>
-   ${posts.length?`<div class="hwlist">${posts.map(postCard).join('')}</div>`:`<div class="empty"><h3>${dateFilterActive?'No posts in this date range':'No posts yet'}</h3><p>${canPost?'Post an assignment or an agenda photo for the whole class.':'Nothing has been posted yet.'}</p>${canPost?`<div class="row"><button class="btn primary" data-act="classpost">${ico('plus',18)}Post to class</button></div>`:''}</div>`}`;
+   ${posts.length?`<div class="hwlist">${posts.map(postCard).join('')}</div>`:`<div class="empty"><h3>${dateFilterActive?'No posts in this date range':'No posts yet'}</h3><p>${dateFilterActive?'Try widening the due-date range or clear it.':canPost?'Post an assignment or an agenda photo for the whole class.':'Nothing has been posted yet.'}</p>${!dateFilterActive&&canPost?`<div class="row"><button class="btn primary" data-act="classpost">${ico('plus',18)}Post to class</button></div>`:''}</div>`}`;
 }
 function openClassForm(post=null){
   const editing=!!post,sid=post?(matchSubject(post.subject.name)||S.subjects[0]?.id):(S.subjects[0]?.id||'');
