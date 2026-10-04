@@ -459,6 +459,7 @@ const fmtDate=(s,wd=false)=>{const d=parseYmd(s);if(!d)return '—';return (wd?W
 const fmtTime=t=>{if(!/^\d{2}:\d{2}$/.test(t||''))return '';const [h,m]=t.split(':').map(Number);return ((h%12)||12)+':'+pad(m)+' '+(h<12?'AM':'PM')};
 const fmtNum=n=>Number(n||0).toLocaleString('en-US');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const withTimeout=(promise,ms,label='Operation timed out')=>Promise.race([promise,new Promise((_,rej)=>setTimeout(()=>rej(new Error(label)),ms))]);
 const debounce=(fn,ms)=>{let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms)}};
 const clamp=(n,a,b)=>Math.min(b,Math.max(a,n));
 
@@ -2409,12 +2410,12 @@ async function boot(){
   if(!S.student.profileComplete){showSetup();return}
   if(SUPABASE_CONFIGURED){
     try{
-      const user=await ensureSupabaseUser();
+      const user=await withTimeout(ensureSupabaseUser(),8000,'Supabase authentication timed out.');
       if(!user){
-        /* Keep personal data usable, but surface the cloud/auth problem instead of silently disabling Class Agenda. */
+        /* Keep personal data usable, but surface the cloud/auth problem instead of blocking the app. */
         console.warn('Shared cloud authentication is unavailable:',SUPABASE_AUTH_LAST_ERROR);
       }else{
-        const p=await cloudOwnProfile();
+        const p=await withTimeout(cloudOwnProfile(user),8000,'Cloud profile restore timed out.');
         if(p){
           S.student.id=p.id;S.student.name=String(p.name||S.student.name).slice(0,40);
           S.student.className=normalizeClassName(p.class_name||S.student.className).slice(0,40);
@@ -2428,11 +2429,21 @@ async function boot(){
   const hp=location.hash.replace(/^#\/?/,'')||'dashboard';ui.routeStr=hp;ui.route=parseRoute(hp);
   shell();
   checkAchievements();refreshReminders();
-  await initClass();
+  /* Never keep the entire app behind the boot screen while a cloud request is slow.
+     Personal IndexedDB data is ready; Class Agenda can finish initializing in the background. */
   $('#boot').remove();$('#app').hidden=false;
   renderAll();
   setInterval(()=>{refreshReminders();renderAll()},5*60*1000);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden){refreshReminders();renderAll()}});
+  try{
+    await withTimeout(initClass(),10000,'Shared class initialization timed out.');
+    renderAll();
+  }catch(e){
+    Class.status='error';
+    Class.lastError=sharedError(e,'Could not initialize shared class data.');
+    console.error('Shared class initialization failed:',e);
+    renderAll();
+  }
 }
 window.__agenda={Class,S,A,Data,levelInfo,xpFor,getStreak,ui,go,checkAchievements};
 boot();
