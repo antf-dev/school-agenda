@@ -114,6 +114,9 @@ a{color:inherit;text-decoration:none}
 .cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}
 .cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}
 .stack{display:grid;gap:12px}
+.mission-preview{display:grid;gap:8px;margin-top:12px}
+.mission-preview-item{padding:9px 10px;border-radius:12px;background:var(--card2)}
+.mission-preview-item .row{gap:8px}
 .muted{color:var(--muted)}
 .faint{color:var(--faint)}
 .row{display:flex;align-items:center;gap:10px}
@@ -1208,7 +1211,7 @@ const ui={route:{name:'dashboard',arg:''},routeStr:'dashboard',query:'',f:{quick
   agendaDateFrom:'',agendaDateTo:'',cal:{y:new Date().getFullYear(),m:new Date().getMonth(),sel:todayStr()},bars:{},stat:{metric:'tasks',range:14},subTab:'all',notifOpen:false,saveState:'saved'};
 
 function parseRoute(p){const [name,arg]=String(p||'').replace(/^#?\/?/,'').split('/');
-  const ok=['dashboard','agenda','class','homework','calendar','subjects','subject','achievements','leaderboard','statistics','students','settings'];
+  const ok=['dashboard','agenda','class','homework','calendar','subjects','subject','achievements','leaderboard','statistics','students','settings','missions','study-assistant'];
   return{name:ok.includes(name)?name:'dashboard',arg:arg||''}}
 function go(path){
   try{location.hash='#/'+path}catch(e){}
@@ -1225,7 +1228,7 @@ function applyTheme(){
 
 const NAV=[['dashboard','Dashboard'],['agenda','Agenda'],['homework','Homework'],['leaderboard','Leaderboard']];
 /* Primary Agenda is the public class agenda; legacy #/class remains an alias. */
-const MORE_NAV=[['subjects','Subjects'],['achievements','Achievements'],['missions','Missions'],['study-assistant','Study assistant'],['curriculum','CRDP Curriculum'],['calendar','Calendar'],['statistics','Statistics'],['settings','Settings'],['students','Students']];
+const MORE_NAV=[['subjects','Subjects'],['achievements','Achievements'],['missions','Missions'],['study-assistant','Study assistant'],['calendar','Calendar'],['statistics','Statistics'],['settings','Settings'],['students','Students']];
 const navKey=()=>{if(ui.route.name==='subject')return'subjects';if(ui.route.name==='class'||ui.route.name==='agenda')return'agenda';return ui.route.name};
 
 function shell(){
@@ -1238,7 +1241,7 @@ function shell(){
     </aside>
     <div class="main">
       <header class="topbar">
-        <label class="search">${ico('search',18)}<input id="q" type="search" placeholder="Search tasks, subjects, chapters…" autocomplete="off" aria-label="Search your agenda"></label>
+        <label class="search">${ico('search',18)}<input id="q" type="search" placeholder="Search tasks and subjects…" autocomplete="off" aria-label="Search your agenda"></label>
         <span class="sp"></span>
         <span id="saved" class="saved" role="status"><i></i><span></span></span>
         <button class="iconbtn" data-act="bell" aria-label="Notifications">${ico('bell',19)}<b class="dot" id="beldot" hidden></b></button>
@@ -1283,8 +1286,9 @@ function renderView(){
   const v=$('#view');
   try{
     const r=ui.route;
-    v.innerHTML=({dashboard:viewDashboard,agenda:viewClass,class:viewClass,homework:viewHomework,calendar:viewCalendar,missions:viewMissions,'study-assistant':viewStudyAssistant,curriculum:viewCurriculum,subjects:viewSubjects,subject:viewSubject,achievements:viewAchievements,leaderboard:viewLeaderboard,statistics:viewStats,students:viewStudents,settings:viewSettings}[r.name]||viewDashboard)();
-    if(['dashboard','calendar','missions','curriculum'].includes(r.name))loadAcademicOverview();
+    v.innerHTML=({dashboard:viewDashboard,agenda:viewClass,class:viewClass,homework:viewHomework,calendar:viewCalendar,missions:viewMissions,'study-assistant':viewStudyAssistant,subjects:viewSubjects,subject:viewSubject,achievements:viewAchievements,leaderboard:viewLeaderboard,statistics:viewStats,students:viewStudents,settings:viewSettings}[r.name]||viewDashboard)();
+    syncStudySessionClock();
+    if(['dashboard','calendar','missions','statistics'].includes(r.name))loadAcademicOverview();
     if(r.name==='students'&&!S.student.isAdmin)go('dashboard');
   if(r.name==='leaderboard'&&SUPABASE_CONFIGURED&&!ui._leaderboard&&!ui._leaderboardLoading&&!ui._leaderboardError){ui._leaderboardLoading=true;cloudLeaderboard().then(x=>{ui._leaderboard=x;ui._leaderboardError=''}).catch(e=>{console.error(e);ui._leaderboard=null;ui._leaderboardError=sharedError(e,'Could not load the leaderboard.')}).finally(()=>{ui._leaderboardLoading=false;renderView()})}
   }catch(e){console.error(e);v.innerHTML=`<div class="empty"><h3>Something went wrong showing this page</h3><p>Your data is safe. Try another page or reload.</p></div>`}
@@ -1341,10 +1345,11 @@ async function loadAcademicOverview(force=false){
   ui._academicPromise=(async()=>{
     try{
       const user=await ensureSupabaseUser();if(!user)return;
-      const [missions,tests,plans]=await Promise.all([
+      const [missions,tests,plans,sessionResult]=await Promise.all([
         supabaseClient.rpc('get_student_missions'),
         supabaseClient.from('student_tests').select('id,subject,title,test_at').order('test_at').limit(30),
-        supabaseClient.from('student_plan_items').select('id,subject,title,details,starts_at,duration_minutes,completed_at').order('starts_at').limit(40)
+        supabaseClient.from('student_plan_items').select('id,subject,title,details,starts_at,duration_minutes,completed_at').order('starts_at').limit(40),
+        supabaseClient.from('student_study_sessions').select('duration_minutes').not('ended_at','is',null).limit(500).then(result=>result).catch(error=>({data:null,error}))
       ]);
       if(missions.error)throw missions.error;
       if(tests.error)throw tests.error;
@@ -1352,12 +1357,15 @@ async function loadAcademicOverview(force=false){
       ui._missions=Array.isArray(missions.data)?missions.data:[];
       ui._tests=Array.isArray(tests.data)?tests.data:[];
       ui._planItems=Array.isArray(plans.data)?plans.data:[];
+      ui._studySessionsAvailable=!sessionResult.error;
+      ui._studySessions=Array.isArray(sessionResult.data)?sessionResult.data:[];
+      if(sessionResult.error)console.warn('Study-session statistics are temporarily unavailable:',sessionResult.error);
       refreshReminders();
       const p=await cloudOwnProfile(user),remoteXP=Number(p?.total_xp||0);
       if(remoteXP>S.student.totalXP){S.student.totalXP=remoteXP;S.student.level=Number(p.level||levelInfo(remoteXP).level);P.student()}
       ui._academicError='';ui._academicLoadedAt=Date.now();
     }catch(e){console.warn('Could not load academic dashboard data:',e);ui._academicError=sharedError(e,'Some shared academic data could not be loaded.')}
-    finally{ui._academicPromise=null;if(['dashboard','calendar','missions','curriculum'].includes(ui.route.name))renderView()}
+    finally{ui._academicPromise=null;if(['dashboard','calendar','missions','statistics'].includes(ui.route.name))renderView()}
   })();
   return ui._academicPromise;
 }
@@ -1369,14 +1377,33 @@ function missionPreview(){
   if(ui._academicError)return '<p class="muted">Missions are temporarily unavailable. Try refreshing.</p>';
   const items=missionItems().slice(0,3);
   if(!items.length)return '<p class="muted">Loading your missions…</p>';
-  return '<div class="stack">'+items.map(m=>'<div><div class="row wrap" style="justify-content:space-between"><b>'+esc(m.title)+'</b><span class="pill '+(m.complete?'ok':'acc')+'">'+(m.complete?'Claimed':'+'+m.xp+' XP')+'</span></div><div class="muted" style="font-size:13px;margin-top:5px">'+m.progress+' / '+m.target+' · '+m.period+'</div></div>').join('')+'<a class="btn sm" href="#/missions" data-go="missions">View all missions</a></div>';
+  return '<div class="mission-preview">'+items.map(m=>'<div class="mission-preview-item"><div class="row wrap" style="justify-content:space-between"><b>'+esc(m.title)+'</b><span class="pill '+(m.complete?'ok':'acc')+'">'+(m.complete?'Claimed':'+'+m.xp+' XP')+'</span></div><div class="muted" style="font-size:13px;margin-top:4px">'+m.progress+' / '+m.target+' · '+m.period+'</div></div>').join('')+'<a class="btn sm" href="#/missions" data-go="missions">View all missions</a></div>';
+}
+async function sendStudyAssistant(){
+  if(ui._aiSending)return;
+  ui._aiMessages=ui._aiMessages||[];
+  const q=$('#ai-question')?.value.trim()||'';
+  if(!q){ui._aiMessages.push({role:'assistant',content:'Type a question first, then choose “Ask the assistant”.'});renderView();return}
+  if(!supabaseClient){ui._aiMessages.push({role:'assistant',content:'The study assistant is unavailable because the app is not connected to Supabase. Please try again when the connection is restored.'});renderView();return}
+  ui._aiSending=true;ui._aiMessages.push({role:'user',content:q});renderView();
+  try{
+    const context={homework:S.homework.filter(h=>!h.completed).slice(0,20).map(h=>({subject:subj(h.subjectId).name,title:h.title,dueDate:h.dueDate})),className:S.student.className};
+    const {data,error}=await supabaseClient.functions.invoke('student-ai',{body:{question:q,context}});
+    if(error)throw error;
+    if(!data?.ok)throw new Error(data?.message||'The assistant did not return a response.');
+    const answer=String(data.answer||'').trim();
+    if(!answer)throw new Error('The assistant returned an empty response. Please try again.');
+    ui._aiMessages.push({role:'assistant',content:answer});
+  }catch(e){console.error('AI request failed:',e);ui._aiMessages.push({role:'assistant',content:sharedError(e,'The study assistant could not be reached. Check the connection and server-side AI configuration, then try again.')})}
+  finally{ui._aiSending=false;renderView()}
 }
 function viewStudyAssistant(){
   const msgs=ui._aiMessages||[];
+  const busy=!!ui._aiSending;
   return '<div class="page-h"><div><h1>AI Study Assistant</h1><p>Ask for an explanation, practice, flashcards, a study plan, or help prioritizing deadlines.</p></div></div>'+
-  '<section class="card"><p class="hint">The assistant can use your class curriculum, upcoming shared deadlines, and quiz progress. Personal homework context is sent only for this request.</p>'+
-  '<div id="ai-chat" class="stack" aria-live="polite" style="max-height:48vh;overflow:auto;margin:16px 0">'+(msgs.length?msgs.map(m=>'<div class="card"><b>'+esc(m.role==='user'?'You':'Study assistant')+'</b><p style="white-space:pre-wrap">'+esc(m.content)+'</p></div>').join(''):'<p class="muted">Your study conversation will appear here.</p>')+'</div>'+
-  '<form id="ai-form"><label class="field"><span>Your question</span><textarea id="ai-question" class="txt" maxlength="3000" rows="4" placeholder="I have a math test Friday. What should I review?"></textarea></label><div class="row wrap" style="margin-top:10px"><button class="btn primary" data-act="ai-send">Ask the assistant</button><span class="hint">No secret keys are stored in this page.</span></div></form></section>';
+  '<section class="card"><p class="hint">Ask for help with a concept, practice questions, flashcards, study plans, or upcoming deadlines. Personal homework context is sent only for this request.</p>'+
+  '<div id="ai-chat" class="stack" aria-live="polite" style="max-height:48vh;overflow:auto;margin:16px 0">'+(msgs.length?msgs.map(m=>'<div class="card"><b>'+esc(m.role==='user'?'You':'Study assistant')+'</b><p style="white-space:pre-wrap">'+esc(m.content)+'</p></div>').join(''):'<p class="muted">Your study conversation will appear here.</p>')+(busy?'<p class="muted">The assistant is thinking…</p>':'')+'</div>'+
+  '<form id="ai-form"><label class="field"><span>Your question</span><textarea id="ai-question" class="txt" maxlength="3000" rows="4" placeholder="I have a math test Friday. What should I review?"></textarea></label><div class="row wrap" style="margin-top:10px"><button type="submit" class="btn primary" data-act="ai-send" '+(busy?'disabled':'')+'>Ask the assistant</button><span class="hint">No secret keys are stored in this page.</span></div></form></section>';
 }
 function viewMissions(){
   const items=missionItems();
@@ -1386,35 +1413,30 @@ function viewMissions(){
   '<section class="card" style="margin-top:16px"><h2>Study session</h2>'+studySessionControl()+'</section>';
 }
 function studySessionControl(){
-  const active=ui._activeStudySession||(()=>{try{return JSON.parse(localStorage.getItem('sa-study-session')||'null')}catch(_){return null}})();
-  if(active?.id){const mins=Math.floor((Date.now()-Number(active.startedAt||Date.now()))/60000);return '<p class="muted">Session in progress · '+Math.max(0,mins)+' min</p><button class="btn primary" data-act="study-finish" '+(mins<5?'disabled':'')+'>Finish session</button><p class="hint">Sessions shorter than 5 minutes don’t earn XP. Rewards are capped by the server.</p>'}
+  const active=activeStudySession();
+  if(active?.id){const seconds=Math.max(0,Math.floor((Date.now()-Number(active.startedAt||Date.now()))/1000));return '<p class="muted" id="study-session-status">Session in progress · '+Math.floor(seconds/60)+' min '+String(seconds%60).padStart(2,'0')+' sec</p><button class="btn primary" id="study-session-finish" data-act="study-finish" '+(seconds<300?'disabled':'')+'>Finish session</button><p class="hint">Sessions shorter than 5 minutes don’t earn XP. Rewards are capped by the server.</p>'}
   return '<p class="muted">Start a focused study session. Earn XP after at least 5 minutes, with a server-enforced limit.</p><button class="btn primary" data-act="study-start">Start study session</button>';
 }
-function curriculumGradeForClass(value){
-  const c=String(value||'').toUpperCase();
-  if(/^9[A-Z]*$/.test(c))return 'Basic Education Grade 9';
-  if(/^10[A-Z]*$/.test(c))return 'First Secondary';
-  return null;
+function activeStudySession(){
+  if(ui._activeStudySession?.id)return ui._activeStudySession;
+  try{const active=JSON.parse(localStorage.getItem('sa-study-session')||'null');return active?.id?active:null}catch(_){return null}
 }
-function viewCurriculum(){
-  const grade=curriculumGradeForClass(S.student.className),topics=ui._curriculumTopics||[];
-  if(!grade)return '<div class="page-h"><div><h1>CRDP Curriculum</h1><p>Curriculum mapping for '+esc(S.student.className||'this class')+' is unavailable.</p></div></div><section class="card"><p class="muted">The CRDP curriculum uses grade and, for some secondary subjects, track-specific materials. This class label does not identify a verified CRDP mapping.</p></section>';
-  if(!ui._curriculumPromise&&!ui._curriculumLoadedAt&&supabaseClient){
-    ui._curriculumPromise=supabaseClient.from('curriculum_topics').select('id,crdp_grade,subject,unit,chapter,topic,learning_objective,source_url,source_version,source_page,mapping_status').eq('crdp_grade',grade).order('subject').order('chapter').then(({data,error})=>{if(error)throw error;ui._curriculumTopics=data||[];ui._curriculumLoadedAt=Date.now();ui._curriculumPromise=null;renderView()}).catch(e=>{ui._curriculumError=sharedError(e,'Could not load curriculum topics.');ui._curriculumPromise=null;renderView()});
-  }
-  return '<div class="page-h"><div><h1>CRDP Curriculum</h1><p>'+esc(grade)+' · sourced entries only</p></div></div>'+
-    (ui._curriculumError?'<div class="note">'+esc(ui._curriculumError)+'</div>':'')+
-    (topics.length?'<div class="stack">'+topics.map(t=>'<article class="card"><div class="row wrap"><span class="pill acc">'+esc(t.subject)+'</span><span class="muted">Chapter '+esc(t.chapter||'—')+'</span></div><h2 style="margin-top:8px">'+esc(t.topic)+'</h2><p class="muted">'+esc(t.learning_objective||'Learning objective not provided in the source record.')+'</p><p class="hint">'+esc(t.source_version)+' · CRDP PDF p. '+esc(t.source_page||'—')+' · <a href="'+esc(t.source_url)+'" target="_blank" rel="noopener">Official source</a></p></article>').join('')+'</div>':'<section class="card"><h2>Topics not mapped yet</h2><p class="muted">CRDP source documents are identified, but detailed verified topics for this subject or grade are not loaded. No topic has been invented.</p><a href="https://www.crdp.org/curriculum" target="_blank" rel="noopener">Browse official CRDP curricula</a></section>');
+function syncStudySessionClock(){
+  const status=$('#study-session-status'),button=$('#study-session-finish');
+  if(!status||!button){if(ui._studySessionTimer){clearInterval(ui._studySessionTimer);ui._studySessionTimer=null}return}
+  const update=()=>{
+    const active=activeStudySession();if(!active?.id)return;
+    const start=Number(active.startedAt),elapsed=Math.max(0,Math.floor((Date.now()-(Number.isFinite(start)&&start>0?start:Date.now()))/1000));
+    status.textContent='Session in progress · '+Math.floor(elapsed/60)+' min '+String(elapsed%60).padStart(2,'0')+' sec';
+    button.disabled=elapsed<300;
+  };
+  update();if(!ui._studySessionTimer)ui._studySessionTimer=setInterval(update,1000);
 }
 
 /* ----- Dashboard ----- */
 function testPreview(){
   const all=[...(ui._tests||[]).map(x=>({title:x.title,subject:x.subject,date:String(x.test_at||'').slice(0,10)})),...classPosts().filter(x=>x.type==='test').map(x=>({title:x.title,subject:x.subject.name,date:x.dueDate}))].filter(x=>x.date>=todayStr()).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,3);
   return all.length?'<div class="stack">'+all.map(x=>'<p><b>'+esc(x.subject)+' — '+esc(x.title)+'</b><br><span class="muted">'+esc(fmtDate(x.date,true))+'</span></p>').join('')+'</div>':'<p class="muted">No upcoming tests are on your agenda yet.</p>';
-}
-function announcementPreview(){
-  const a=classPosts().slice().sort((x,y)=>String(y.createdAt||'').localeCompare(String(x.createdAt||''))).slice(0,3);
-  return a.length?'<div class="stack">'+a.map(x=>'<p><b>'+esc(x.title)+'</b><br><span class="muted">'+esc(x.subject.name)+' · '+esc(x.description||'Class agenda post')+'</span></p>').join('')+'</div>':'<p class="muted">No class posts are available yet.</p>';
 }
 function studySuggestion(){
   const next=S.homework.filter(x=>!x.completed).sort(cmp)[0];
@@ -1425,7 +1447,6 @@ function viewDashboard(){
   const tl=S.homework.filter(h=>h.dueDate===today).sort(cmp);
   const done=tl.filter(h=>h.completed).length,pct=tl.length?Math.round(done/tl.length*100):0,left=tl.length-done;
   const over=S.homework.filter(h=>statusOf(h)==='overdue').sort(cmp);
-  const up=S.homework.filter(h=>!h.completed&&h.dueDate>today).sort(cmp).slice(0,6);
   const active=S.homework.filter(h=>!h.completed).length;
   const hr=new Date().getHours(),greet=hr<5?'Good evening':hr<12?'Good morning':hr<18?'Good afternoon':'Good evening';
   const sub=!S.homework.length?'Add your first task to get started.':tl.length?(left?`${left} item${left>1?'s':''} left for today.`:'Everything due today is done.'):'Nothing is due today.';
@@ -1442,6 +1463,7 @@ function viewDashboard(){
           <p class="muted" style="font-size:13.5px">${fmtNum(li.remaining)} XP to level ${li.level+1} · ${fmtNum(S.student.totalXP)} XP total</p>
         </div>
       </div>
+      <div class="mission-preview"><b>Daily + weekly missions</b>${missionPreview()}</div>
     </div>
     <div style="display:grid;place-items:center;text-align:center;gap:8px">
       ${ring(pct,{size:112,stroke:10,key:'today',cls:'today',inner:`<b style="font-size:28px">${pct}%</b>`})}
@@ -1461,8 +1483,7 @@ function viewDashboard(){
       <section class="card"><h2>Today <span class="count">${tl.length}</span></h2>${hwList(tl,'Nothing due today. Enjoy it, or get ahead on something below.')}</section>
     </div>
     <div class="stack">
-      <section class="card"><h2>Coming up</h2>${hwList(up,'Nothing scheduled after today.')}</section>
-      <section class="card"><h2>Daily + weekly missions</h2>${missionPreview()}</section><section class="card"><h2>Study session</h2>${studySessionControl()}</section><section class="card"><h2>Upcoming tests</h2>${testPreview()}</section><section class="card"><h2>Class announcements</h2>${announcementPreview()}</section><section class="card"><h2>Study suggestions</h2>${studySuggestion()}</section><section class="card"><h2>Quick actions</h2><div class="row wrap">${addButtons}<a class="btn" href="#/calendar" data-go="calendar">Open smart calendar</a><a class="btn" href="#/curriculum" data-go="curriculum">Browse CRDP topics</a></div></section>
+      <section class="card"><h2>Study session</h2>${studySessionControl()}</section><section class="card"><h2>Upcoming tests</h2>${testPreview()}</section><section class="card"><h2>Study suggestions</h2>${studySuggestion()}</section><section class="card"><h2>Quick actions</h2><div class="row wrap">${addButtons}</div></section>
     </div>
   </div>`;
 }
@@ -1602,7 +1623,8 @@ function viewStats(){
   const wk=done.filter(h=>dOf(h)>=ws).length,mn=done.filter(h=>dOf(h).startsWith(mo)).length;
   const xpWk=S.xpLog.filter(e=>e.date>=ws).reduce((a,e)=>a+e.amount,0),xpMn=S.xpLog.filter(e=>e.date.startsWith(mo)).reduce((a,e)=>a+e.amount,0);
   const overall=S.homework.length?Math.round(done.length/S.homework.length*100):0;
-  const kpi=[[done.length,'Homework completed'],[fmtNum(T.totalXP),'Total XP'],[li.level,'Current level'],[stk.current,'Day streak'],[overall+'%','Overall completion'],[wk,'Completed this week'],[mn,'Completed this month'],[fmtNum(xpWk),'XP this week'],[fmtNum(xpMn),'XP this month']];
+  const sessions=ui._studySessions||[],studyMinutes=sessions.reduce((sum,s)=>sum+(Number(s.duration_minutes)||0),0);
+  const kpi=[[done.length,'Homework completed'],[fmtNum(T.totalXP),'Total XP'],[li.level,'Current level'],[stk.current,'Day streak'],[overall+'%','Overall completion'],[wk,'Completed this week'],[mn,'Completed this month'],[ui._studySessionsAvailable===false?'—':sessions.length,'Study sessions'],[ui._studySessionsAvailable===false?'—':studyMinutes,'Study minutes'],[fmtNum(xpWk),'XP this week'],[fmtNum(xpMn),'XP this month']];
   const {metric,range}=ui.stat;
   const days=[];for(let i=range-1;i>=0;i--)days.push(addDays(t,-i));
   const xpByDay=dailyXP();
@@ -2537,13 +2559,13 @@ const ACT={
     try{await syncProfile();await fetchClassPosts();renderView();toast('Class agenda synced')}catch(e){console.error(e);toast(sharedError(e,'Could not sync the class agenda.'),{kind:'bad'})}
     finally{t.disabled=false;t.innerHTML=ico('refresh',16)+'Sync'}
   },
-  'ai-send':async t=>{const q=$('#ai-question')?.value.trim()||'';if(!q){toast('Write a question first.',{kind:'bad'});return}if(!supabaseClient){toast('AI service is not connected.',{kind:'bad'});return}const form=$('#ai-form');t.disabled=true;t.textContent='Thinking…';ui._aiMessages=ui._aiMessages||[];ui._aiMessages.push({role:'user',content:q});renderView();try{const context={homework:S.homework.filter(h=>!h.completed).slice(0,20).map(h=>({subject:subj(h.subjectId).name,title:h.title,dueDate:h.dueDate})),className:S.student.className};const {data,error}=await supabaseClient.functions.invoke('student-ai',{body:{question:q,context}});if(error)throw error;if(!data?.ok)throw new Error(data?.message||'The assistant did not return a response.');ui._aiMessages.push({role:'assistant',content:String(data.answer||'')});}catch(e){console.error('AI request failed:',e);ui._aiMessages.push({role:'assistant',content:sharedError(e,'The study assistant is temporarily unavailable. Check that its server-side AI key is configured.')})}finally{renderView()}},
-  'academic-refresh':async t=>{t.disabled=true;t.textContent='Refreshing…';ui._academicLoadedAt=0;try{await loadAcademicOverview(true);ui._curriculumLoadedAt=0;if(ui.route.name==='curriculum'){ui._curriculumTopics=null;ui._curriculumError=''}toast('Academic data refreshed')}finally{t.disabled=false;t.textContent='Refresh'}},
+  'ai-send':()=>sendStudyAssistant(),
+  'academic-refresh':async t=>{t.disabled=true;t.textContent='Refreshing…';ui._academicLoadedAt=0;try{await loadAcademicOverview(true);toast('Academic data refreshed')}finally{t.disabled=false;t.textContent='Refresh'}},
   'calendar-range':t=>{ui._calendarRange=t.dataset.range;renderView()},
   'add-test':()=>openAcademicItemForm('test'),
   'add-plan':()=>openAcademicItemForm('plan'),
   'study-start':async t=>{try{if(!supabaseClient)throw new Error('Connect your student account to save a study session.');t.disabled=true;t.textContent='Starting…';const {data,error}=await supabaseClient.rpc('start_student_study_session',{p_subject:null,p_topic:null});if(error)throw error;const row=Array.isArray(data)?data[0]:data;const id=typeof row==='string'?row:row?.start_student_study_session||row?.id;if(!id)throw new Error('The study session did not start.');ui._activeStudySession={id,startedAt:Date.now()};try{localStorage.setItem('sa-study-session',JSON.stringify(ui._activeStudySession))}catch(_){}renderAll()}catch(e){toast(sharedError(e,'Could not start a study session.'),{kind:'bad'})}finally{t.disabled=false}},
-  'study-finish':async t=>{try{const s=ui._activeStudySession||JSON.parse(localStorage.getItem('sa-study-session')||'null');if(!s?.id)throw new Error('No active study session was found on this device.');t.disabled=true;t.textContent='Saving…';const {data,error}=await supabaseClient.rpc('finish_student_study_session',{p_session_id:s.id});if(error)throw error;if(data?.ok===false)throw new Error(data.message||'The session could not be completed.');ui._activeStudySession=null;try{localStorage.removeItem('sa-study-session')}catch(_){}ui._academicLoadedAt=0;await loadAcademicOverview(true);toast('Study session saved · '+Number(data?.minutes||0)+' minutes · +'+Number(data?.xp||0)+' XP');renderAll()}catch(e){toast(sharedError(e,'Could not finish this study session.'),{kind:'bad'})}finally{t.disabled=false}},
+  'study-finish':async t=>{if(ui._studyFinishInFlight)return;ui._studyFinishInFlight=true;try{const s=activeStudySession();if(!s?.id)throw new Error('No active study session was found on this device.');t.disabled=true;t.textContent='Saving…';const {data,error}=await supabaseClient.rpc('finish_student_study_session',{p_session_id:s.id});if(error)throw error;if(data?.ok===false)throw new Error(data.message||'The session could not be completed.');const earned=Math.max(0,Math.round(Number(data?.xp)||0));if(!data?.duplicate&&earned&&!S.xpLog.some(entry=>entry.sessionId===s.id)){const entry={id:uid('xp'),sessionId:s.id,ts:new Date().toISOString(),date:todayStr(),amount:earned,reason:'Study session',subjectId:null,subjectName:'Study session'};S.xpLog.push(entry);await P.xp(entry)}ui._activeStudySession=null;try{localStorage.removeItem('sa-study-session')}catch(_){}ui._academicLoadedAt=0;const refreshPromise=loadAcademicOverview(true);toast(data?.duplicate?'Study session was already saved; no extra XP was awarded.':'Study session saved · '+Number(data?.minutes||0)+' minutes · +'+earned+' XP');renderAll();await refreshPromise}catch(e){toast(sharedError(e,'Could not finish this study session.'),{kind:'bad'})}finally{ui._studyFinishInFlight=false;t.disabled=false}},
   'leaderboard-refresh':async t=>{t.disabled=true;ui._leaderboardError='';try{ui._leaderboard=await cloudLeaderboard();toast('Leaderboard refreshed')}catch(e){ui._leaderboard=null;ui._leaderboardError=sharedError(e,'Could not load the leaderboard.');toast(ui._leaderboardError,{kind:'bad'})}finally{t.disabled=false;renderAll()}},
   'student-class-change':t=>{const student=(Class.people||[]).find(p=>p.id===t.dataset.id);if(student&&!student.isAdmin)openStudentClassForm(student)},
   'student-remove':async t=>{
