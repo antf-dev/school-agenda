@@ -1024,12 +1024,22 @@ const A={
            so a later retry stays idempotent if the server had already run. */
         h.xpAwarded=false;
         P.hw(h);
-        const reason=String(e?.message||e||'');
-        const classAccessProblem=/Assignment not found in your class|Student profile not found|Authentication required/i.test(reason);
-        toast(classAccessProblem
-          ?'Marked complete on this device, but no XP was awarded because this account cannot access the class assignment. Sign in again or ask an administrator to restore the student account.'
-          :'Marked complete on this device, but the server could not verify XP. Check your connection and try again later.',
-          {kind:'bad',ms:7000});
+        const reason=[e?.message,e?.details,e?.hint].filter(Boolean).join(' ')||String(e||'');
+        let failureMessage='Marked complete on this device, but XP was not awarded because the server could not verify it. Check your connection and try again later.';
+        if(/Assignment not found in your class|Student profile not found/i.test(reason)){
+          failureMessage='Marked complete on this device, but your student account cannot access this class assignment, so no XP was awarded. Sign out and back in; if it still happens, ask an administrator to check your class.';
+        }else if(/Authentication required|invalid jwt|jwt expired|unauthorized|session.*expired/i.test(reason)||e?.code==='PGRST301'){
+          failureMessage='Marked complete on this device, but your sign-in session is no longer valid, so no XP was awarded. Sign out and sign back in.';
+        }else if(/This post is not a homework assignment/i.test(reason)){
+          failureMessage='Marked complete on this device, but this class post is not set as homework or a project, so no XP was awarded. Ask an administrator to check the post type.';
+        }else if(/You cannot earn XP for an assignment you posted/i.test(reason)){
+          failureMessage='Marked complete on this device, but XP is not awarded for an assignment you posted yourself.';
+        }else if(e?.code==='P0001'){
+          failureMessage='Marked complete on this device, but the server rejected the XP request for this assignment. No XP was awarded. Ask an administrator to check the assignment and your class.';
+        }else if(/Failed to fetch|NetworkError|Load failed|timeout/i.test(reason)){
+          failureMessage='Marked complete on this device, but the XP service could not be reached. No XP was awarded. Check your connection and try again later.';
+        }
+        toast(failureMessage,{kind:'bad',ms:8500});
         renderAll();return null;
       }
     }else if(!h.xpAwarded)res=awardXP(h);else toast('Done again – this one already gave you XP.');
