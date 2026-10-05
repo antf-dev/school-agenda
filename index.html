@@ -1019,8 +1019,18 @@ const A={
         else if(data?.duplicate)toast('Homework saved. This task already received its XP.');
       }catch(e){
         console.error('Secure homework completion failed:',e);
-        h.completed=false;h.completedAt=null;h.xpAwarded=false;delete h.serverTaskId;
-        P.hw(h);toast(sharedError(e,'Could not securely save this homework completion.'),{kind:'bad',ms:5000});renderAll();return null;
+        /* Completion is useful even if secure XP cannot be verified. Keep the
+           local checkmark, but never award client-side XP; retain the task ID
+           so a later retry stays idempotent if the server had already run. */
+        h.xpAwarded=false;
+        P.hw(h);
+        const reason=String(e?.message||e||'');
+        const classAccessProblem=/Assignment not found in your class|Student profile not found|Authentication required/i.test(reason);
+        toast(classAccessProblem
+          ?'Marked complete on this device, but no XP was awarded because this account cannot access the class assignment. Sign in again or ask an administrator to restore the student account.'
+          :'Marked complete on this device, but the server could not verify XP. Check your connection and try again later.',
+          {kind:'bad',ms:7000});
+        renderAll();return null;
       }
     }else if(!h.xpAwarded)res=awardXP(h);else toast('Done again – this one already gave you XP.');
     P.hw(h);P.student();checkAchievements();renderAll();
