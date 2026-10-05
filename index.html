@@ -998,14 +998,47 @@ const A={
     for(const f of h.attachments){if(!S.homework.some(o=>o.attachments.includes(f))&&S.files[f]?.kind==='attachment'){delete S.files[f];P.delFile(f)}}
     checkAchievements();renderAll();
   },
-  toggle(id){
+  async toggle(id){
     const h=S.homework.find(x=>x.id===id);if(!h)return null;
     if(h.completed){h.completed=false;h.completedAt=null;h.updatedAt=new Date().toISOString();P.hw(h);renderAll();toast('Marked as not done. XP you earned is kept.');return null}
+    const today=todayStr(),before=levelInfo(S.student.totalXP).level;
     h.completed=true;h.completedAt=new Date().toISOString();h.updatedAt=h.completedAt;
     let res=null;
-    if(!h.xpAwarded)res=awardXP(h);else toast('Done again – this one already gave you XP.');
+    if(!h.xpAwarded&&supabaseClient&&S.student.profileComplete&&S.student.id&&S.student.id!=='student'){
+      h.xpAwarded=true;
+      try{
+        let data,error;
+        if(h.classPostId){
+          const result=await supabaseClient.rpc('complete_class_agenda_assignment',{p_agenda_post_id:h.classPostId});
+          data=result.data;error=result.error;
+        }else{
+          h.serverTaskId=h.serverTaskId||sharedUuid();
+          const result=await supabaseClient.rpc('award_personal_homework_xp',{p_task_id:h.serverTaskId,p_title:h.title,p_subject:subj(h.subjectId).name,p_due_date:h.dueDate||null});
+          data=result.data;error=result.error;
+        }
+        if(error)throw error;
+        if(data?.ok===false)throw new Error(data.message||'Homework completion could not be saved.');
+        const profile=Number(data?.total_xp)?data:await cloudOwnProfile();
+        const remoteXP=Number(profile?.total_xp||0);
+        if(remoteXP>S.student.totalXP)S.student.totalXP=remoteXP;
+        S.student.level=levelInfo(S.student.totalXP).level;
+        S.student.completedCount++;
+        if(h.dueDate>today)S.student.earlyCount++;
+        if(!S.student.activeDays.includes(today))S.student.activeDays.push(today);
+        const earned=Number(data?.xp)||0;
+        if(earned>0){const entry={id:uid('xp'),ts:new Date().toISOString(),date:today,amount:earned,reason:'Server-validated homework',hwId:h.id,subjectId:h.subjectId,subjectName:subj(h.subjectId).name};S.xpLog.push(entry);P.xp(entry);notify('xp',`+${earned} XP`,`${subj(h.subjectId).name}: ${h.title}`)}
+        const after=levelInfo(S.student.totalXP).level;
+        res={total:earned,levelUp:after>before?after:null,from:before};
+        if(data?.reward_limited)toast('Homework saved. Today’s server XP limit has been reached.');
+        else if(data?.duplicate)toast('Homework saved. This task already received its XP.');
+      }catch(e){
+        console.error('Secure homework completion failed:',e);
+        h.completed=false;h.completedAt=null;h.xpAwarded=false;delete h.serverTaskId;
+        P.hw(h);toast(sharedError(e,'Could not securely save this homework completion.'),{kind:'bad',ms:5000});renderAll();return null;
+      }
+    }else if(!h.xpAwarded)res=awardXP(h);else toast('Done again – this one already gave you XP.');
     P.hw(h);P.student();checkAchievements();renderAll();
-    if(res&&res.levelUp)showLevelUp(res.levelUp);if(res)cloudSyncProgress();
+    if(res&&res.levelUp)showLevelUp(res.levelUp);
     return res;
   },
   addSubject(d){
@@ -2458,7 +2491,7 @@ async function logoutAgenda(){
 const ACT={
   add:t=>openAddChooser({dueDate:t.dataset.date,subjectId:t.dataset.sub}),
   upload:()=>openUploadFlow(),
-  toggle:t=>{const r=t.getBoundingClientRect();const res=A.toggle(t.dataset.id);if(res)floatXP('+'+res.total+' XP',{getBoundingClientRect:()=>r})},
+  toggle:async t=>{const r=t.getBoundingClientRect();const res=await A.toggle(t.dataset.id);if(res&&res.total)floatXP('+'+res.total+' XP',{getBoundingClientRect:()=>r})},
   edit:t=>{const h=S.homework.find(x=>x.id===t.dataset.id);if(h)openHWForm({hw:h})},
   del:async t=>{const h=S.homework.find(x=>x.id===t.dataset.id);if(h&&await confirmDialog({title:'Delete this homework?',body:`\u201C${esc(h.title)}\u201D will be removed. XP you already earned stays in your total.`,ok:'Delete',danger:true})){A.deleteHomework(h.id);toast('Homework deleted')}},
   qf:t=>{ui.f.quick=t.dataset.k;renderView()},
