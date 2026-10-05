@@ -825,7 +825,7 @@ function normHW(r){
     xp:Number.isFinite(+r.xp)?Math.max(0,Math.round(+r.xp)):DIFF.medium.xp,xpCustom:!!r.xpCustom,
     completed:!!r.completed,completedAt:r.completedAt||null,xpAwarded:!!r.xpAwarded,notes:String(r.notes||''),
     attachments:Array.isArray(r.attachments)?r.attachments.map(String):[],sourceImageId:r.sourceImageId||null,classPostId:r.classPostId||null,
-    createdAt:r.createdAt||now,updatedAt:r.updatedAt||r.createdAt||now};
+    serverTaskId:r.serverTaskId||null,createdAt:r.createdAt||now,updatedAt:r.updatedAt||r.createdAt||now};
 }
 function normSubject(r,i){
   if(!r||typeof r!=='object'||!r.id)return null;
