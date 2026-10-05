@@ -1,0 +1,3 @@
+grant select on public.student_xp_ledger, public.student_task_completions, public.student_study_sessions, public.student_missions, public.student_quiz_attempts, public.deadline_reminders to authenticated;
+grant select, insert, update, delete on public.student_tests, public.student_plan_items, public.student_notification_preferences to authenticated;
+grant select on public.curriculum_topics to anon, authenticated;
