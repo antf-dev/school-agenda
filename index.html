@@ -117,6 +117,13 @@ a{color:inherit;text-decoration:none}
 .mission-preview{display:grid;gap:8px;margin-top:12px}
 .mission-preview-item{padding:9px 10px;border-radius:12px;background:var(--card2)}
 .mission-preview-item .row{gap:8px}
+.mission-icon{width:30px;height:30px;flex:0 0 30px;border-radius:9px;background:var(--accent-soft);display:grid;place-items:center;font-size:17px}
+.mission-title{display:flex;align-items:center;gap:8px;min-width:0}
+.timeline{display:grid;gap:12px}
+.timeline-day{padding:12px;border-radius:14px;background:var(--card2)}
+.timeline-day h3{font-size:15px;margin:0 0 8px}
+.timeline-item{display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-top:1px solid var(--line);font-size:14px}
+.timeline-item:first-of-type{border-top:0}
 .muted{color:var(--muted)}
 .faint{color:var(--faint)}
 .row{display:flex;align-items:center;gap:10px}
@@ -153,7 +160,6 @@ a{color:inherit;text-decoration:none}
 .heat i.rest{background:color-mix(in srgb,var(--card2) 50%,transparent)}
 .heat i.today{outline:2px solid var(--accent);outline-offset:1px}
 .heat i.fut{opacity:.3}
-.heatlabels{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-top:12px;font-size:11px;color:var(--faint);text-align:center}
 
 /* homework cards */
 .hwlist{display:grid;gap:10px}
@@ -221,25 +227,6 @@ a{color:inherit;text-decoration:none}
 .swatches{display:flex;gap:8px;flex-wrap:wrap}
 .swatch{width:30px;height:30px;border-radius:50%;border:3px solid transparent;background:var(--c)}
 .swatch.on{border-color:var(--text)}
-
-/* calendar */
-.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
-.cal .dow{font-size:12px;color:var(--faint);text-align:center;padding:4px 0}
-.day{min-height:78px;border-radius:12px;background:var(--bg2);border:1px solid transparent;padding:6px 7px;text-align:left;display:flex;flex-direction:column;justify-content:space-between;gap:6px}
-.day:hover{border-color:var(--line2)}
-.day.out{opacity:.4}
-.day.today .n{background:var(--accent);color:var(--accent-ink)}
-.day.sel{border-color:var(--accent);background:var(--accent-soft)}
-.day .n{font-size:13px;font-weight:600;width:24px;height:24px;display:grid;place-items:center;border-radius:50%}
-.dots{display:flex;gap:4px;flex-wrap:wrap;align-items:center}
-.dots i{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-style:normal;font-weight:700;color:var(--muted)}
-.dots i::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--accent)}
-.dots i.ok::before{background:var(--ok)}
-.dots i.bad::before{background:var(--bad)}
-.legend{display:flex;gap:16px;font-size:13px;color:var(--muted);flex-wrap:wrap}
-.legend span{display:inline-flex;align-items:center;gap:6px}
-.legend span::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--accent)}
-.legend .ok::before{background:var(--ok)}.legend .bad::before{background:var(--bad)}
 
 /* achievements & stats */
 .achgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
@@ -912,11 +899,7 @@ function getStreak(){
   }
   return{current:count,best:Math.max(S.student.bestStreak||0,count),doneToday:days.has(today)};
 }
-function streakHistory(){
-  const today=todayStr(),start=addDays(weekStart(today),-28),days=new Set(S.student.activeDays),out=[];
-  for(let i=0;i<35;i++){const d=addDays(start,i);out.push({d,on:days.has(d),today:d===today,fut:d>today})}
-  return out;
-}
+
 const dailyXP=()=>{const m={};S.xpLog.forEach(e=>{m[e.date]=(m[e.date]||0)+(+e.amount||0)});return m};
 const maxDailyXP=()=>Math.max(0,...Object.values(dailyXP()));
 
@@ -1287,7 +1270,6 @@ function renderView(){
   try{
     const r=ui.route;
     v.innerHTML=({dashboard:viewDashboard,agenda:viewClass,class:viewClass,homework:viewHomework,calendar:viewCalendar,missions:viewMissions,'study-assistant':viewStudyAssistant,subjects:viewSubjects,subject:viewSubject,achievements:viewAchievements,leaderboard:viewLeaderboard,statistics:viewStats,students:viewStudents,settings:viewSettings}[r.name]||viewDashboard)();
-    syncStudySessionClock();
     if(['dashboard','calendar','missions','statistics'].includes(r.name))loadAcademicOverview();
     if(r.name==='students'&&!S.student.isAdmin)go('dashboard');
   if(r.name==='leaderboard'&&SUPABASE_CONFIGURED&&!ui._leaderboard&&!ui._leaderboardLoading&&!ui._leaderboardError){ui._leaderboardLoading=true;cloudLeaderboard().then(x=>{ui._leaderboard=x;ui._leaderboardError=''}).catch(e=>{console.error(e);ui._leaderboard=null;ui._leaderboardError=sharedError(e,'Could not load the leaderboard.')}).finally(()=>{ui._leaderboardLoading=false;renderView()})}
@@ -1345,39 +1327,40 @@ async function loadAcademicOverview(force=false){
   ui._academicPromise=(async()=>{
     try{
       const user=await ensureSupabaseUser();if(!user)return;
-      const [missions,tests,plans,sessionResult]=await Promise.all([
+      const [missions,tests]=await Promise.all([
         supabaseClient.rpc('get_student_missions'),
-        supabaseClient.from('student_tests').select('id,subject,title,test_at').order('test_at').limit(30),
-        supabaseClient.from('student_plan_items').select('id,subject,title,details,starts_at,duration_minutes,completed_at').order('starts_at').limit(40),
-        supabaseClient.from('student_study_sessions').select('duration_minutes').not('ended_at','is',null).limit(500).then(result=>result).catch(error=>({data:null,error}))
+        supabaseClient.from('student_tests').select('id,subject,title,test_at').order('test_at').limit(30)
       ]);
       if(missions.error)throw missions.error;
       if(tests.error)throw tests.error;
-      if(plans.error)throw plans.error;
       ui._missions=Array.isArray(missions.data)?missions.data:[];
       ui._tests=Array.isArray(tests.data)?tests.data:[];
-      ui._planItems=Array.isArray(plans.data)?plans.data:[];
-      ui._studySessionsAvailable=!sessionResult.error;
-      ui._studySessions=Array.isArray(sessionResult.data)?sessionResult.data:[];
-      if(sessionResult.error)console.warn('Study-session statistics are temporarily unavailable:',sessionResult.error);
       refreshReminders();
       const p=await cloudOwnProfile(user),remoteXP=Number(p?.total_xp||0);
       if(remoteXP>S.student.totalXP){S.student.totalXP=remoteXP;S.student.level=Number(p.level||levelInfo(remoteXP).level);P.student()}
       ui._academicError='';ui._academicLoadedAt=Date.now();
     }catch(e){console.warn('Could not load academic dashboard data:',e);ui._academicError=sharedError(e,'Some shared academic data could not be loaded.')}
-    finally{ui._academicPromise=null;if(['dashboard','calendar','missions','statistics'].includes(ui.route.name))renderView()}
+     finally{ui._academicPromise=null;if(['dashboard','calendar','missions','statistics'].includes(ui.route.name))renderView()}
   })();
   return ui._academicPromise;
 }
 function missionItems(){
-  return (ui._missions||[]).map(m=>({title:m.title||m.mission_id,progress:Number(m.progress)||0,target:Number(m.target)||1,xp:Number(m.xp_reward)||0,complete:!!m.claimed_at,period:m.period_start===todayStr()?'Today':'This week'}));
+  return (ui._missions||[]).filter(m=>!/(study|session)/i.test(String(m.mission_id||'')+' '+String(m.title||''))).map(m=>({id:m.mission_id||m.id,title:m.title||String(m.mission_id||'Mission').replace(/[_-]+/g,' '),icon:missionIcon(m),progress:Number(m.progress)||0,target:Number(m.target)||1,xp:Number(m.xp_reward)||0,complete:!!m.claimed_at,period:m.period_start===todayStr()?'Today':'This week',period_start:m.period_start,period_end:m.period_end}));
+}
+function missionIcon(m){
+  const key=String(m.mission_id||'')+' '+String(m.title||'');
+  if(/assignment|homework/i.test(key))return'📚';
+  if(/quiz|test/i.test(key))return'🧠';
+  if(/streak|day/i.test(key))return'🔥';
+  if(/achievement|badge/i.test(key))return'🏅';
+  return'🎯';
 }
 function missionPreview(){
   if(!supabaseClient)return '<p class="muted">Sign in with a shared student account to track secure missions.</p>';
   if(ui._academicError)return '<p class="muted">Missions are temporarily unavailable. Try refreshing.</p>';
   const items=missionItems().slice(0,3);
   if(!items.length)return '<p class="muted">Loading your missions…</p>';
-  return '<div class="mission-preview">'+items.map(m=>'<div class="mission-preview-item"><div class="row wrap" style="justify-content:space-between"><b>'+esc(m.title)+'</b><span class="pill '+(m.complete?'ok':'acc')+'">'+(m.complete?'Claimed':'+'+m.xp+' XP')+'</span></div><div class="muted" style="font-size:13px;margin-top:4px">'+m.progress+' / '+m.target+' · '+m.period+'</div></div>').join('')+'<a class="btn sm" href="#/missions" data-go="missions">View all missions</a></div>';
+  return '<div class="mission-preview">'+items.map(m=>'<div class="mission-preview-item"><div class="row wrap" style="justify-content:space-between"><span class="mission-title"><span class="mission-icon" aria-hidden="true">'+m.icon+'</span><b>'+esc(m.title)+'</b></span><span class="pill '+(m.complete?'ok':'acc')+'">'+(m.complete?'Claimed':'+'+m.xp+' XP')+'</span></div><div class="muted" style="font-size:13px;margin-top:4px">'+m.progress+' / '+m.target+' · '+m.period+'</div></div>').join('')+'<a class="btn sm" href="#/missions" data-go="missions">View all missions</a></div>';
 }
 async function sendStudyAssistant(){
   if(ui._aiSending)return;
@@ -1409,34 +1392,21 @@ function viewMissions(){
   const items=missionItems();
   return '<div class="page-h"><div><h1>Missions</h1><p>Short, bounded goals. Rewards are recorded and validated in Supabase.</p></div><button class="btn" data-act="academic-refresh">Refresh</button></div>'+
   (ui._academicError?'<div class="note">'+esc(ui._academicError)+'</div>':'')+
-  (items.length?'<div class="grid cols-2">'+items.map(m=>'<section class="card"><div class="row wrap" style="justify-content:space-between"><h2>'+esc(m.title)+'</h2><span class="pill '+(m.complete?'ok':'acc')+'">'+(m.complete?'Reward recorded':'+'+m.xp+' XP')+'</span></div><p class="muted">'+m.period+' · '+fmtDate(m.period_start,true)+' – '+fmtDate(m.period_end,true)+'</p><div class="bar" style="margin-top:14px"><i style="width:'+Math.min(100,Math.round(m.progress/m.target*100))+'%"></i></div><p class="muted">'+m.progress+' / '+m.target+'</p></section>').join('')+'</div>':'<div class="empty"><h3>Loading missions</h3><p>Connect to your student account to load secure daily and weekly missions.</p></div>')+
-  '<section class="card" style="margin-top:16px"><h2>Study session</h2>'+studySessionControl()+'</section>';
-}
-function studySessionControl(){
-  const active=activeStudySession();
-  if(active?.id){const seconds=Math.max(0,Math.floor((Date.now()-Number(active.startedAt||Date.now()))/1000));return '<p class="muted" id="study-session-status">Session in progress · '+Math.floor(seconds/60)+' min '+String(seconds%60).padStart(2,'0')+' sec</p><button class="btn primary" id="study-session-finish" data-act="study-finish" '+(seconds<300?'disabled':'')+'>Finish session</button><p class="hint">Sessions shorter than 5 minutes don’t earn XP. Rewards are capped by the server.</p>'}
-  return '<p class="muted">Start a focused study session. Earn XP after at least 5 minutes, with a server-enforced limit.</p><button class="btn primary" data-act="study-start">Start study session</button>';
-}
-function activeStudySession(){
-  if(ui._activeStudySession?.id)return ui._activeStudySession;
-  try{const active=JSON.parse(localStorage.getItem('sa-study-session')||'null');return active?.id?active:null}catch(_){return null}
-}
-function syncStudySessionClock(){
-  const status=$('#study-session-status'),button=$('#study-session-finish');
-  if(!status||!button){if(ui._studySessionTimer){clearInterval(ui._studySessionTimer);ui._studySessionTimer=null}return}
-  const update=()=>{
-    const active=activeStudySession();if(!active?.id)return;
-    const start=Number(active.startedAt),elapsed=Math.max(0,Math.floor((Date.now()-(Number.isFinite(start)&&start>0?start:Date.now()))/1000));
-    status.textContent='Session in progress · '+Math.floor(elapsed/60)+' min '+String(elapsed%60).padStart(2,'0')+' sec';
-    button.disabled=elapsed<300;
-  };
-  update();if(!ui._studySessionTimer)ui._studySessionTimer=setInterval(update,1000);
+  (items.length?'<div class="grid cols-2">'+items.map(m=>'<section class="card"><div class="row wrap" style="justify-content:space-between"><span class="mission-title"><span class="mission-icon" aria-hidden="true">'+m.icon+'</span><h2>'+esc(m.title)+'</h2></span><span class="pill '+(m.complete?'ok':'acc')+'">'+(m.complete?'Reward recorded':'+'+m.xp+' XP')+'</span></div><p class="muted">'+m.period+' · '+fmtDate(m.period_start,true)+' – '+fmtDate(m.period_end,true)+'</p><div class="bar" style="margin-top:14px"><i style="width:'+Math.min(100,Math.round(m.progress/m.target*100))+'%"></i></div><p class="muted">'+m.progress+' / '+m.target+'</p></section>').join('')+'</div>':'<div class="empty"><h3>Loading missions</h3><p>Connect to your student account to load secure daily and weekly missions.</p></div>');
 }
 
 /* ----- Dashboard ----- */
-function testPreview(){
-  const all=[...(ui._tests||[]).map(x=>({title:x.title,subject:x.subject,date:String(x.test_at||'').slice(0,10)})),...classPosts().filter(x=>x.type==='test').map(x=>({title:x.title,subject:x.subject.name,date:x.dueDate}))].filter(x=>x.date>=todayStr()).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,3);
-  return all.length?'<div class="stack">'+all.map(x=>'<p><b>'+esc(x.subject)+' — '+esc(x.title)+'</b><br><span class="muted">'+esc(fmtDate(x.date,true))+'</span></p>').join('')+'</div>':'<p class="muted">No upcoming tests are on your agenda yet.</p>';
+function timelinePreview(){
+  const today=todayStr(),end=addDays(today,2),events=[];
+  S.homework.filter(h=>!h.completed||S.settings.showCompleted).forEach(h=>{if(h.dueDate>=today&&h.dueDate<=end)events.push({date:h.dueDate,subject:subj(h.subjectId).name,title:h.title,kind:h.type==='test'?'Test':'Homework',done:h.completed})});
+  classPosts().filter(p=>p.dueDate&&!ui._classDone?.[p.id]).forEach(p=>{if(p.dueDate>=today&&p.dueDate<=end)events.push({date:p.dueDate,subject:p.subject.name,title:p.title,kind:p.type==='test'?'Test':p.type==='project'?'Project':'Class agenda',done:false})});
+  (ui._tests||[]).forEach(x=>{const date=String(x.test_at||'').slice(0,10);if(date>=today&&date<=end)events.push({date,subject:x.subject,title:x.title,kind:'Test',done:false})});
+  events.sort((a,b)=>a.date.localeCompare(b.date)||a.title.localeCompare(b.title));
+  const groups=[0,1,2].map(offset=>{const date=addDays(today,offset),label=offset===0?'Today':offset===1?'Tomorrow':fmtDate(date,true),items=events.filter(x=>x.date===date);return '<section class="timeline-day"><h3>'+label+'</h3>'+(items.length?items.map(x=>'<div class="timeline-item"><span class="pill '+(x.done?'ok':x.kind==='Test'?'acc':'')+'">'+esc(x.kind)+'</span><span><b>'+esc(x.subject)+'</b> · '+esc(x.title)+(x.done?' <span class="muted">Done</span>':'')+'</span></div>').join(''):'<p class="muted" style="font-size:13px;margin:0">Nothing due.</p>')+'</section>'}).join('');
+  return '<div class="timeline">'+groups+'</div>';
+}
+function viewCalendar(){
+  return '<div class="page-h"><div><h1>Calendar</h1><p>Homework, class agenda dates and tests for today and the next two days.</p></div><button class="btn" data-act="academic-refresh">Refresh</button></div><section class="card"><h2>Next 3 days</h2>'+timelinePreview()+'</section>';
 }
 function studySuggestion(){
   const next=S.homework.filter(x=>!x.completed).sort(cmp)[0];
@@ -1450,7 +1420,6 @@ function viewDashboard(){
   const active=S.homework.filter(h=>!h.completed).length;
   const hr=new Date().getHours(),greet=hr<5?'Good evening':hr<12?'Good morning':hr<18?'Good afternoon':'Good evening';
   const sub=!S.homework.length?'Add your first task to get started.':tl.length?(left?`${left} item${left>1?'s':''} left for today.`:'Everything due today is done.'):'Nothing is due today.';
-  const heat=streakHistory();
   return`
   <div class="card hero">
     <div>
@@ -1472,18 +1441,16 @@ function viewDashboard(){
     <div>
       <div class="streakbig"><span>🔥</span>${stk.current} day${stk.current===1?'':'s'}</div>
       <p class="muted" style="font-size:13.5px;margin-top:2px">${stk.current?(stk.doneToday?'Streak kept for today.':'Finish one assignment today to keep it.'):'Complete an assignment to start a streak.'} Best: ${stk.best}.</p>
-      <div class="heat" role="img" aria-label="Streak history for the last five weeks">${heat.map(c=>`<i class="${c.on?'on':''} ${c.today?'today':''} ${c.fut?'fut':''}" title="${fmtDate(c.d,true)}${c.on?' – completed homework':''}"></i>`).join('')}</div>
-      <div class="heatlabels">${['M','T','W','T','F','S','S'].map(x=>`<span>${x}</span>`).join('')}</div>
     </div>
   </div>
   ${!S.homework.length?`<div class="empty" style="margin-top:16px"><h3>Your agenda is empty</h3><p>Type an assignment or upload a photo of your school agenda.</p>${addButtons}</div>`:''}
   <div class="grid cols-2" style="margin-top:16px">
     <div class="stack">
       ${over.length?`<section class="card"><h2>Overdue <span class="count">${over.length}</span></h2>${hwList(over,'')}</section>`:''}
-      <section class="card"><h2>Today <span class="count">${tl.length}</span></h2>${hwList(tl,'Nothing due today. Enjoy it, or get ahead on something below.')}</section>
+      <section class="card"><h2>Next 3 days</h2>${timelinePreview()}</section>
     </div>
     <div class="stack">
-      <section class="card"><h2>Study session</h2>${studySessionControl()}</section><section class="card"><h2>Upcoming tests</h2>${testPreview()}</section><section class="card"><h2>Study suggestions</h2>${studySuggestion()}</section><section class="card"><h2>Quick actions</h2><div class="row wrap">${addButtons}</div></section>
+      <section class="card"><h2>Study suggestions</h2>${studySuggestion()}</section><section class="card"><h2>Quick actions</h2><div class="row wrap">${addButtons}</div></section>
     </div>
   </div>`;
 }
@@ -1544,43 +1511,6 @@ function hwResults(){
     (r.length?`<div class="hwlist">${r.map(hwCard).join('')}</div>`:`<div class="empty"><h3>${S.homework.length?'No matches':'No homework yet'}</h3><p>${S.homework.length?'Try a different search or clear the filters.':'Add your first assignment to see it here.'}</p>${S.homework.length?'':addButtons}</div>`);
 }
 
-/* ----- Calendar ----- */
-function openAcademicItemForm(kind){
-  if(!supabaseClient||!S.student.profileComplete||!Class.me){toast('Sign in to save tests and study plan items.',{kind:'bad'});return}
-  const isTest=kind==='test',when=new Date(Date.now()+2*60*60*1000);when.setMinutes(0,0,0);
-  const localValue=new Date(when.getTime()-when.getTimezoneOffset()*60000).toISOString().slice(0,16);
-  const heading=isTest?'Add test or exam':'Plan a study block';
-  const fields='<label class="field"><span>Subject</span><select class="sel" name="subject" required>'+subjectOptions(S.subjects[0]?.id)+'</select></label>'+
-    '<label class="field"><span>'+(isTest?'Test name':'Study task')+'</span><input class="inp" name="title" maxlength="160" required></label>'+
-    (isTest?'':'<label class="field full"><span>Notes (optional)</span><textarea class="txt" name="details" maxlength="500"></textarea></label>')+
-    '<label class="field"><span>Date and time</span><input class="inp" type="datetime-local" name="when" required value="'+localValue+'"></label>'+
-    (isTest?'':'<label class="field"><span>Duration (minutes)</span><input class="inp" type="number" name="duration" min="5" max="180" step="5" value="25" required></label>')+
-    '<p class="err full" id="academic-item-error" role="alert"></p>';
-  const m=openModal(mhead(heading)+'<form class="mb" id="academic-item-form"><div class="fgrid">'+fields+'</div><div class="mf"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn primary">Save</button></div></form>',{cls:'wide'});
-  const form=m.el.querySelector('#academic-item-form'),err=m.el.querySelector('#academic-item-error'),btn=form.querySelector('[type=submit]');
-  form.onsubmit=async e=>{e.preventDefault();const title=form.elements.title.value.trim(),subject=form.elements.subject.value,starts=new Date(form.elements.when.value);if(!title||!subject||Number.isNaN(starts.getTime())){err.textContent='Enter a subject, title and valid date.';return}
-    btn.disabled=true;btn.textContent='Saving…';err.textContent='';
-    try{const payload=isTest?{student_id:Class.me,subject,title,test_at:starts.toISOString()}:{student_id:Class.me,subject,title,details:form.elements.details.value.trim(),starts_at:starts.toISOString(),duration_minutes:Math.max(5,Math.min(180,Number(form.elements.duration.value)||25))};
-      const {error}=await supabaseClient.from(isTest?'student_tests':'student_plan_items').insert(payload);if(error)throw error;
-      closeModal(m);ui._academicLoadedAt=0;await loadAcademicOverview(true);renderAll();toast(isTest?'Test saved to your calendar.':'Study block saved to your calendar.');
-    }catch(e2){console.error('Academic item save failed:',e2);err.textContent=sharedError(e2,isTest?'Could not save the test.':'Could not save the study block.');btn.disabled=false;btn.textContent='Save'}
-  };
-}
-function viewCalendar(){
-  const t=todayStr(),range=ui._calendarRange||'week',end=range==='today'?t:range==='tomorrow'?addDays(t,1):range==='week'?addDays(weekStart(t),6):addDays(t,30);
-  const events=[];
-  S.homework.filter(h=>!h.completed||S.settings.showCompleted).forEach(h=>events.push({id:'hw-'+h.id,date:h.dueDate,title:h.title,subject:subj(h.subjectId).name,kind:h.type==='test'?'Test':'Homework',done:h.completed,cls:h.completed?'ok':statusOf(h)==='overdue'?'bad':''}));
-  classPosts().forEach(p=>{if(p.dueDate)events.push({id:'class-'+p.id,date:p.dueDate,title:p.title,subject:p.subject.name,kind:p.type==='test'?'Test':p.type==='project'?'Project':'Class agenda',done:!!ui._classDone?.[p.id],cls:''})});
-  (ui._tests||[]).forEach(x=>events.push({id:'test-'+x.id,date:String(x.test_at||'').slice(0,10),title:x.title,subject:x.subject,kind:'Test',done:false,cls:'acc'}));
-  (ui._planItems||[]).filter(x=>!x.completed_at&&x.starts_at).forEach(x=>events.push({id:'plan-'+x.id,date:String(x.starts_at).slice(0,10),title:x.title,subject:x.subject,kind:'Study plan',done:false,cls:'acc'}));
-  const filtered=events.filter(x=>x.date>=t&&x.date<=end).sort((a,b)=>a.date.localeCompare(b.date)||a.title.localeCompare(b.title));
-  const days=[...new Set(filtered.map(x=>x.date))];
-  const groups=days.map(d=>'<section class="card"><div class="row wrap" style="justify-content:space-between"><h2>'+esc(d===t?'Today':d===addDays(t,1)?'Tomorrow':fmtDate(d,true))+'</h2><span class="count">'+filtered.filter(x=>x.date===d).length+'</span></div><div class="stack">'+filtered.filter(x=>x.date===d).map(x=>'<div class="row wrap" style="justify-content:space-between;align-items:flex-start"><div><span class="pill '+esc(x.cls)+'">'+esc(x.kind)+'</span> <b>'+esc(x.subject)+' — '+esc(x.title)+'</b></div><span class="muted">'+esc(fmtDate(x.date,true))+'</span></div>').join('')+'</div></section>').join('');
-  return '<div class="page-h"><div><h1>Smart Calendar</h1><p>Deadlines and study work first; updated from your homework and class agenda.</p></div><button class="btn" data-act="academic-refresh">Refresh</button></div>'+
-    '<div class="row wrap" style="margin:10px 0"><button class="btn primary" data-act="add-test">Add test or exam</button><button class="btn" data-act="add-plan">Plan study time</button></div>'+
-    '<div class="chips">'+[['today','Today'],['tomorrow','Tomorrow'],['week','This week'],['upcoming','Next 30 days']].map(([k,l])=>'<button class="chip '+(range===k?'on':'')+'" data-act="calendar-range" data-range="'+k+'">'+l+'</button>').join('')+'</div>'+
-    '<div class="stack" style="margin-top:14px">'+(groups||'<div class="empty"><h3>Nothing scheduled in this range</h3><p>Homework deadlines, tests, class agenda dates and study plans will appear here.</p></div>')+'</div>';
-}
 /* ----- Subjects ----- */
 function subStats(id){const l=S.homework.filter(h=>h.subjectId===id);const c=l.filter(h=>h.completed).length;return{total:l.length,done:c,pct:l.length?Math.round(c/l.length*100):0}}
 function viewSubjects(){
@@ -1623,8 +1553,7 @@ function viewStats(){
   const wk=done.filter(h=>dOf(h)>=ws).length,mn=done.filter(h=>dOf(h).startsWith(mo)).length;
   const xpWk=S.xpLog.filter(e=>e.date>=ws).reduce((a,e)=>a+e.amount,0),xpMn=S.xpLog.filter(e=>e.date.startsWith(mo)).reduce((a,e)=>a+e.amount,0);
   const overall=S.homework.length?Math.round(done.length/S.homework.length*100):0;
-  const sessions=ui._studySessions||[],studyMinutes=sessions.reduce((sum,s)=>sum+(Number(s.duration_minutes)||0),0);
-  const kpi=[[done.length,'Homework completed'],[fmtNum(T.totalXP),'Total XP'],[li.level,'Current level'],[stk.current,'Day streak'],[overall+'%','Overall completion'],[wk,'Completed this week'],[mn,'Completed this month'],[ui._studySessionsAvailable===false?'—':sessions.length,'Study sessions'],[ui._studySessionsAvailable===false?'—':studyMinutes,'Study minutes'],[fmtNum(xpWk),'XP this week'],[fmtNum(xpMn),'XP this month']];
+  const kpi=[[done.length,'Homework completed'],[fmtNum(T.totalXP),'Total XP'],[li.level,'Current level'],[stk.current,'Day streak'],[overall+'%','Overall completion'],[wk,'Completed this week'],[mn,'Completed this month'],[fmtNum(xpWk),'XP this week'],[fmtNum(xpMn),'XP this month']];
   const {metric,range}=ui.stat;
   const days=[];for(let i=range-1;i>=0;i--)days.push(addDays(t,-i));
   const xpByDay=dailyXP();
@@ -2561,11 +2490,6 @@ const ACT={
   },
   'ai-send':()=>sendStudyAssistant(),
   'academic-refresh':async t=>{t.disabled=true;t.textContent='Refreshing…';ui._academicLoadedAt=0;try{await loadAcademicOverview(true);toast('Academic data refreshed')}finally{t.disabled=false;t.textContent='Refresh'}},
-  'calendar-range':t=>{ui._calendarRange=t.dataset.range;renderView()},
-  'add-test':()=>openAcademicItemForm('test'),
-  'add-plan':()=>openAcademicItemForm('plan'),
-  'study-start':async t=>{try{if(!supabaseClient)throw new Error('Connect your student account to save a study session.');t.disabled=true;t.textContent='Starting…';const {data,error}=await supabaseClient.rpc('start_student_study_session',{p_subject:null,p_topic:null});if(error)throw error;const row=Array.isArray(data)?data[0]:data;const id=typeof row==='string'?row:row?.start_student_study_session||row?.id;if(!id)throw new Error('The study session did not start.');ui._activeStudySession={id,startedAt:Date.now()};try{localStorage.setItem('sa-study-session',JSON.stringify(ui._activeStudySession))}catch(_){}renderAll()}catch(e){toast(sharedError(e,'Could not start a study session.'),{kind:'bad'})}finally{t.disabled=false}},
-  'study-finish':async t=>{if(ui._studyFinishInFlight)return;ui._studyFinishInFlight=true;try{const s=activeStudySession();if(!s?.id)throw new Error('No active study session was found on this device.');t.disabled=true;t.textContent='Saving…';const {data,error}=await supabaseClient.rpc('finish_student_study_session',{p_session_id:s.id});if(error)throw error;if(data?.ok===false)throw new Error(data.message||'The session could not be completed.');const earned=Math.max(0,Math.round(Number(data?.xp)||0));if(!data?.duplicate&&earned&&!S.xpLog.some(entry=>entry.sessionId===s.id)){const entry={id:uid('xp'),sessionId:s.id,ts:new Date().toISOString(),date:todayStr(),amount:earned,reason:'Study session',subjectId:null,subjectName:'Study session'};S.xpLog.push(entry);await P.xp(entry)}ui._activeStudySession=null;try{localStorage.removeItem('sa-study-session')}catch(_){}ui._academicLoadedAt=0;const refreshPromise=loadAcademicOverview(true);toast(data?.duplicate?'Study session was already saved; no extra XP was awarded.':'Study session saved · '+Number(data?.minutes||0)+' minutes · +'+earned+' XP');renderAll();await refreshPromise}catch(e){toast(sharedError(e,'Could not finish this study session.'),{kind:'bad'})}finally{ui._studyFinishInFlight=false;t.disabled=false}},
   'leaderboard-refresh':async t=>{t.disabled=true;ui._leaderboardError='';try{ui._leaderboard=await cloudLeaderboard();toast('Leaderboard refreshed')}catch(e){ui._leaderboard=null;ui._leaderboardError=sharedError(e,'Could not load the leaderboard.');toast(ui._leaderboardError,{kind:'bad'})}finally{t.disabled=false;renderAll()}},
   'student-class-change':t=>{const student=(Class.people||[]).find(p=>p.id===t.dataset.id);if(student&&!student.isAdmin)openStudentClassForm(student)},
   'student-remove':async t=>{
