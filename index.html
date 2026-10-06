@@ -450,6 +450,7 @@ const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','De
 const MONL=['January','February','March','April','May','June','July','August','September','October','November','December'];
 const fmtDate=(s,wd=false)=>{const d=parseYmd(s);if(!d)return '—';return (wd?WD[d.getDay()]+', ':'')+MON[d.getMonth()]+' '+d.getDate()};
 const fmtTime=t=>{if(!/^\d{2}:\d{2}$/.test(t||''))return '';const [h,m]=t.split(':').map(Number);return ((h%12)||12)+':'+pad(m)+' '+(h<12?'AM':'PM')};
+const fmtPostedAt=iso=>{const d=new Date(iso||'');return isNaN(d.getTime())?'date unavailable':new Intl.DateTimeFormat(undefined,{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}).format(d)};
 const fmtNum=n=>Number(n||0).toLocaleString('en-US');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const withTimeout=(promise,ms,label='Operation timed out')=>Promise.race([promise,new Promise((_,rej)=>setTimeout(()=>rej(new Error(label)),ms))]);
@@ -1211,7 +1212,7 @@ Reply with only JSON in exactly this shape:
    11. UI STATE, ROUTER, RENDERING
    ===================================================================== */
 const ui={route:{name:'dashboard',arg:''},routeStr:'dashboard',query:'',f:{quick:'all',subject:'',priority:'',difficulty:'',date:''},
-  agendaDateFrom:'',agendaDateTo:'',cal:{y:new Date().getFullYear(),m:new Date().getMonth(),sel:todayStr()},bars:{},stat:{metric:'tasks',range:14},subTab:'all',notifOpen:false,saveState:'saved'};
+  agendaDateRange:'',cal:{y:new Date().getFullYear(),m:new Date().getMonth(),sel:todayStr()},bars:{},stat:{metric:'tasks',range:14},subTab:'all',notifOpen:false,saveState:'saved'};
 
 function parseRoute(p){const [name,arg]=String(p||'').replace(/^#?\/?/,'').split('/');
   const ok=['dashboard','agenda','class','homework','calendar','subjects','subject','achievements','leaderboard','statistics','students','settings','missions','study-assistant'];
@@ -2368,7 +2369,7 @@ function postCard(p){
       <h3 class="hw-title">${esc(p.title)}</h3>${p.description?`<p class="hw-desc">${esc(p.description)}</p>`:''}
       <div class="hw-meta"><span class="pill ${overdue?'bad':p.dueDate===todayStr()?'acc':''}">${ico('calendar',13)}${esc(dueLabel(p))}${p.dueTime?' · '+fmtTime(p.dueTime):''}</span><span class="pill">${DIFF[p.difficulty].label}</span>
         ${photoPaths.length?`<button class="pill acc" style="border:0;cursor:pointer" data-act="classimgs" data-paths="${esc(JSON.stringify(photoPaths))}">${ico('image',13)}View ${photoPaths.length===1?'photo':photoPaths.length+' photos'}</button>`:(p.dueDate<todayStr()&&imagePathList(p).length?`<span class="pill">${ico('image',13)}Photo expired</span>`:'')}</div>
-      <div class="postby">${pr&&pr.avatarUrl?`<img class="av" alt="" src="${esc(pr.avatarUrl)}">`:''}<span>Posted by ${esc(name)}</span></div>
+      <div class="postby">${pr&&pr.avatarUrl?`<img class="av" alt="" src="${esc(pr.avatarUrl)}">`:''}<span>Posted by ${esc(name)}</span><span class="muted">· Posted ${esc(fmtPostedAt(p.createdAt))}</span></div>
     </div>
     <div class="hw-side">${["homework","project"].includes(p.type)?`<button class="btn sm primary" data-act="classcomplete" data-pid="${esc(p.id)}">Complete · +20 XP</button>`:""}<button class="btn sm" data-act="classadd" data-pid="${esc(p.id)}" ${added?'disabled':''}>${added?'In my homework':'Add to mine'}</button>
       ${manage?`<div class="acts"><button class="iconbtn sm" data-act="classedit" data-pid="${esc(p.id)}" aria-label="Edit post">${ico('edit',16)}</button><button class="iconbtn sm" data-act="classdel" data-pid="${esc(p.id)}" aria-label="Delete post">${ico('trash',16)}</button></div>`:''}</div>
@@ -2380,13 +2381,14 @@ function viewClass(){
   if(Class.status==='loading')return head+`<div class="empty"><p>Loading the class agenda…</p></div>`;
   if(Class.status==='off')return head+`<div class="empty"><h3>Public class agenda unavailable</h3><p>The shared class agenda needs the shared database connection. Your private homework still works normally.</p></div>`;
   if(Class.status==='error')return head+`<div class="empty"><h3>Couldn\u2019t load the public class agenda</h3><p>${esc(Class.lastError||'Check your connection and reload the page.')}</p></div>`;
-  const dateFilterActive=Boolean(ui.agendaDateFrom||ui.agendaDateTo);
+  const dateFilterActive=Boolean(ui.agendaDateRange);
   let posts=classPosts();
   const subs=[...new Set(posts.map(p=>p.subject.name))].sort();
   if(Class.mine)posts=posts.filter(p=>p.ownerId===Class.me);
   if(Class.subject)posts=posts.filter(p=>p.subject.name===Class.subject);
-  if(ui.agendaDateFrom)posts=posts.filter(p=>p.dueDate&&p.dueDate>=ui.agendaDateFrom);
-  if(ui.agendaDateTo)posts=posts.filter(p=>p.dueDate&&p.dueDate<=ui.agendaDateTo);
+  const today=todayStr(),dateRanges={past7:{from:addDays(today,-7),to:addDays(today,-1)},today:{from:today,to:today},tomorrow:{from:addDays(today,1),to:addDays(today,1)},next7:{from:addDays(today,1),to:addDays(today,7)},next30:{from:addDays(today,1),to:addDays(today,30)}};
+  const selectedRange=dateRanges[ui.agendaDateRange];
+  if(selectedRange)posts=posts.filter(p=>p.dueDate&&p.dueDate>=selectedRange.from&&p.dueDate<=selectedRange.to);
   const q=ui.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   if(q.length)posts=posts.filter(p=>{const hay=[p.title,p.description,p.notes,p.subject.name,p.dueDate].join(' ').toLowerCase();return q.every(w=>hay.includes(w))});
   const notes=[];
@@ -2397,9 +2399,7 @@ function viewClass(){
   return head+`<div class="note">${notes.map(esc).join(' ')}</div>
    <div class="row wrap" style="margin-bottom:14px"><div class="chips"><button class="chip ${!Class.mine?'on':''}" data-act="classf" data-k="all">Everyone</button><button class="chip ${Class.mine?'on':''}" data-act="classf" data-k="mine">My posts</button></div>
     <select class="sel" style="width:auto" data-classsub aria-label="Subject"><option value="">All subjects</option>${subs.map(n=>`<option ${Class.subject===n?'selected':''}>${esc(n)}</option>`).join('')}</select>
-    <label class="field" style="flex:1;min-width:145px;max-width:210px"><span>Due from</span><input class="inp" type="date" data-agenda-date="from" value="${esc(ui.agendaDateFrom)}" ${ui.agendaDateTo?`max="${esc(ui.agendaDateTo)}"`:''} aria-label="Due date from"></label>
-    <label class="field" style="flex:1;min-width:145px;max-width:210px"><span>Due through</span><input class="inp" type="date" data-agenda-date="to" value="${esc(ui.agendaDateTo)}" ${ui.agendaDateFrom?`min="${esc(ui.agendaDateFrom)}"`:''} aria-label="Due date through"></label>
-    ${dateFilterActive?`<button class="btn sm" data-act="agenda-dates-clear">Clear dates</button>`:''}</div>
+    <select class="sel" style="width:auto;min-width:155px" data-agenda-date-range aria-label="Filter agenda by due date"><option value="" ${!ui.agendaDateRange?'selected':''}>All dates</option><option value="past7" ${ui.agendaDateRange==='past7'?'selected':''}>Past 7 days</option><option value="today" ${ui.agendaDateRange==='today'?'selected':''}>Today</option><option value="tomorrow" ${ui.agendaDateRange==='tomorrow'?'selected':''}>Tomorrow</option><option value="next7" ${ui.agendaDateRange==='next7'?'selected':''}>Next 7 days</option><option value="next30" ${ui.agendaDateRange==='next30'?'selected':''}>Next 30 days</option></select></div>
    ${posts.length?`<div class="hwlist">${posts.map(postCard).join('')}</div>`:`<div class="empty"><h3>${dateFilterActive?'No posts in this date range':'No posts yet'}</h3><p>${dateFilterActive?'Try widening the due-date range or clear it.':canPost?'Post an assignment or an agenda photo for the whole class.':'Nothing has been posted yet.'}</p>${!dateFilterActive&&canPost?`<div class="row"><button class="btn primary" data-act="classpost">${ico('plus',18)}Post to class</button></div>`:''}</div>`}`;
 }
 function openClassForm(post=null){
@@ -2557,7 +2557,6 @@ const ACT={
     toast('Added to your homework')},
   classimgs:t=>{let paths=[];try{paths=JSON.parse(t.dataset.paths||'[]')}catch(e){paths=t.dataset.path?[t.dataset.path]:[]}viewClassImages(paths)},
   classf:t=>{if(t.dataset.k==='mine')Class.mine=!Class.mine;else Class.mine=false;renderView()},
-  'agenda-dates-clear':()=>{ui.agendaDateFrom='';ui.agendaDateTo='';renderView()},
   export:()=>exportBackup(),import:()=>openImport(),reset:()=>resetAll()
 };
 document.addEventListener('submit',e=>{if(e.target?.id==='ai-form'){e.preventDefault();const b=e.target.querySelector('[data-act="ai-send"]');if(b)ACT['ai-send'](b)}});
@@ -2570,7 +2569,7 @@ document.addEventListener('click',e=>{
 });
 document.addEventListener('change',async e=>{
   const t=e.target;
-  if(t.dataset.agendaDate){if(t.dataset.agendaDate==='from')ui.agendaDateFrom=t.value;else ui.agendaDateTo=t.value;renderView();return}
+  if(t.dataset.agendaDateRange!==undefined){ui.agendaDateRange=t.value;renderView();return}
   if(t.dataset.classsub!==undefined){Class.subject=t.value;renderView();return}
   if(t.id==='classinp'){A.setProfile(S.student.name,t.value);return}
   if(t.id==='peopleclass'){ui.peopleClass=t.value;updateStudentDirectoryResults();return}
