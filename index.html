@@ -443,6 +443,7 @@ const todayStr=()=>ymd(new Date());
 const nowHM=()=>{const d=new Date();return pad(d.getHours())+':'+pad(d.getMinutes())};
 const parseYmd=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s||'');if(!m)return null;const d=new Date(+m[1],+m[2]-1,+m[3]);return isNaN(d)?null:d};
 const addDays=(s,n)=>{const d=parseYmd(s);d.setDate(d.getDate()+n);return ymd(d)};
+const dateRangeForPreset=(preset,today=todayStr())=>({past7:{from:addDays(today,-7),to:addDays(today,-1)},today:{from:today,to:today},tomorrow:{from:addDays(today,1),to:addDays(today,1)},next7:{from:addDays(today,1),to:addDays(today,7)},next30:{from:addDays(today,1),to:addDays(today,30)}}[preset]||null);
 const dayDiff=(a,b)=>Math.round((parseYmd(b)-parseYmd(a))/864e5);
 const weekStart=s=>{const d=parseYmd(s);return addDays(s,-((d.getDay()+6)%7))};
 const WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'], WDL=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -1213,7 +1214,7 @@ Reply with only JSON in exactly this shape:
 /* =====================================================================
    11. UI STATE, ROUTER, RENDERING
    ===================================================================== */
-const ui={route:{name:'dashboard',arg:''},routeStr:'dashboard',query:'',f:{quick:'all',subject:'',priority:'',difficulty:'',date:''},
+const ui={route:{name:'dashboard',arg:''},routeStr:'dashboard',query:'',f:{quick:'all',subject:'',priority:'',difficulty:'',date:'',timeline:''},
   agendaDateRange:'',cal:{y:new Date().getFullYear(),m:new Date().getMonth(),sel:todayStr()},bars:{},stat:{metric:'tasks',range:14},subTab:'all',notifOpen:false,saveState:'saved'};
 
 function parseRoute(p){const [name,arg]=String(p||'').replace(/^#?\/?/,'').split('/');
@@ -1420,9 +1421,9 @@ function viewMissions(){
 
 /* ----- Dashboard ----- */
 function timelinePreview(){
-  const today=todayStr(),end=addDays(today,2),events=[];
-  S.homework.filter(h=>!h.completed||S.settings.showCompleted).forEach(h=>{if(h.dueDate>=today&&h.dueDate<=end)events.push({date:h.dueDate,subject:subj(h.subjectId).name,title:h.title,kind:h.type==='test'?'Test':'Homework',done:h.completed})});
-  classPosts().filter(p=>p.dueDate&&!ui._classDone?.[p.id]).forEach(p=>{if(p.dueDate>=today&&p.dueDate<=end)events.push({date:p.dueDate,subject:p.subject.name,title:p.title,kind:p.type==='test'?'Test':p.type==='project'?'Project':'Class agenda',done:false})});
+  const today=todayStr(),end=addDays(today,2),events=[],agendaPosts=classPosts(),agendaPostIds=new Set(agendaPosts.map(p=>p.id));
+  S.homework.filter(h=>(!h.completed||S.settings.showCompleted)&&(!h.classPostId||!agendaPostIds.has(h.classPostId))).forEach(h=>{if(h.dueDate>=today&&h.dueDate<=end)events.push({date:h.dueDate,subject:subj(h.subjectId).name,title:h.title,kind:h.type==='test'?'Test':'Homework',done:h.completed})});
+  agendaPosts.filter(p=>p.dueDate&&!ui._classDone?.[p.id]).forEach(p=>{if(p.dueDate>=today&&p.dueDate<=end)events.push({date:p.dueDate,subject:p.subject.name,title:p.title,kind:p.type==='test'?'Test':p.type==='project'?'Project':'Homework',done:false})});
   (ui._tests||[]).forEach(x=>{const date=String(x.test_at||'').slice(0,10);if(date>=today&&date<=end)events.push({date,subject:x.subject,title:x.title,kind:'Test',done:false})});
   events.sort((a,b)=>a.date.localeCompare(b.date)||a.title.localeCompare(b.title));
   const groups=[0,1,2].map(offset=>{const date=addDays(today,offset),label=offset===0?'Today':offset===1?'Tomorrow':fmtDate(date,true),items=events.filter(x=>x.date===date);return '<section class="timeline-day"><h3>'+label+'</h3>'+(items.length?items.map(x=>'<div class="timeline-item"><span class="pill '+(x.done?'ok':x.kind==='Test'?'acc':'')+'">'+esc(x.kind)+'</span><span><b>'+esc(x.subject)+'</b> · '+esc(x.title)+(x.done?' <span class="muted">Done</span>':'')+'</span></div>').join(''):'<p class="muted" style="font-size:13px;margin:0">Nothing due.</p>')+'</section>'}).join('');
@@ -1501,7 +1502,7 @@ function viewAgenda(){
 
 /* ----- Homework (search + filters) ----- */
 function filterHW(){
-  const f=ui.f,t=todayStr(),q=ui.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const f=ui.f,t=todayStr(),q=ui.query.trim().toLowerCase().split(/\s+/).filter(Boolean),dateRange=dateRangeForPreset(f.timeline,t);
   return S.homework.filter(h=>{
     const st=statusOf(h),s=subj(h.subjectId);
     if(f.quick==='today'&&h.dueDate!==t)return false;
@@ -1510,6 +1511,7 @@ function filterHW(){
     if(f.quick==='overdue'&&st!=='overdue')return false;
     if(f.subject&&h.subjectId!==f.subject)return false;
     if(f.date&&h.dueDate!==f.date)return false;
+    if(dateRange&&(!h.dueDate||h.dueDate<dateRange.from||h.dueDate>dateRange.to))return false;
     if(q.length){const hay=[h.title,h.description,h.notes,s.name,TYPES[h.type],h.dueDate,fmtDate(h.dueDate)].join(' ').toLowerCase();if(!q.every(w=>hay.includes(w)))return false}
     return true;
   }).sort((a,b)=>(a.completed-b.completed)||(a.completed?String(b.completedAt).localeCompare(String(a.completedAt)):cmp(a,b)));
@@ -1517,12 +1519,12 @@ function filterHW(){
 function viewHomework(){
   const f=ui.f;
   const quick=[['all','All'],['today','Today'],['active','Active'],['completed','Completed'],['overdue','Overdue']];
-  const dirty=f.subject||f.date||ui.query;
+  const dirty=f.subject||f.date||f.timeline||ui.query;
   return`<div class="page-h"><div><h1>Homework</h1><p>Check things off, earn XP.</p></div><button class="btn primary add-btn" data-act="add" style="display:inline-flex!important">${ico('plus',18)}Add homework</button></div>
   <div class="chips">${quick.map(([k,l])=>`<button class="chip ${f.quick===k?'on':''}" data-act="qf" data-k="${k}">${l}</button>`).join('')}</div>
   <div class="filters">
     <select class="sel" data-filter="subject" aria-label="Subject"><option value="">All subjects</option>${S.subjects.map(s=>`<option value="${esc(s.id)}" ${f.subject===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select>
-    <input class="inp" type="date" data-filter="date" value="${esc(f.date)}" aria-label="Due date">
+    <select class="sel" data-filter="timeline" aria-label="Filter homework by due date"><option value="" ${!f.timeline?'selected':''}>All dates</option><option value="past7" ${f.timeline==='past7'?'selected':''}>Past 7 days</option><option value="today" ${f.timeline==='today'?'selected':''}>Today</option><option value="tomorrow" ${f.timeline==='tomorrow'?'selected':''}>Tomorrow</option><option value="next7" ${f.timeline==='next7'?'selected':''}>Next 7 days</option><option value="next30" ${f.timeline==='next30'?'selected':''}>Next 30 days</option></select>
     ${dirty?`<button class="btn ghost sm" data-act="clearf">${ico('x',14)}Clear filters</button>`:''}
   </div>
   ${ui.query?`<p class="muted" style="margin-bottom:10px">Searching for <b style="color:var(--text)">${esc(ui.query)}</b></p>`:''}
@@ -2388,8 +2390,7 @@ function viewClass(){
   const subs=[...new Set(posts.map(p=>p.subject.name))].sort();
   if(Class.mine)posts=posts.filter(p=>p.ownerId===Class.me);
   if(Class.subject)posts=posts.filter(p=>p.subject.name===Class.subject);
-  const today=todayStr(),dateRanges={past7:{from:addDays(today,-7),to:addDays(today,-1)},today:{from:today,to:today},tomorrow:{from:addDays(today,1),to:addDays(today,1)},next7:{from:addDays(today,1),to:addDays(today,7)},next30:{from:addDays(today,1),to:addDays(today,30)}};
-  const selectedRange=dateRanges[ui.agendaDateRange];
+  const today=todayStr(),selectedRange=dateRangeForPreset(ui.agendaDateRange,today);
   if(selectedRange)posts=posts.filter(p=>p.dueDate&&p.dueDate>=selectedRange.from&&p.dueDate<=selectedRange.to);
   const q=ui.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   if(q.length)posts=posts.filter(p=>{const hay=[p.title,p.description,p.notes,p.subject.name,p.dueDate].join(' ').toLowerCase();return q.every(w=>hay.includes(w))});
@@ -2490,8 +2491,8 @@ const ACT={
   toggle:async t=>{const r=t.getBoundingClientRect();const res=await A.toggle(t.dataset.id);if(res&&res.total)floatXP('+'+res.total+' XP',{getBoundingClientRect:()=>r})},
   edit:t=>{const h=S.homework.find(x=>x.id===t.dataset.id);if(h)openHWForm({hw:h})},
   del:async t=>{const h=S.homework.find(x=>x.id===t.dataset.id);if(h&&await confirmDialog({title:'Delete this homework?',body:`\u201C${esc(h.title)}\u201D will be removed. XP you already earned stays in your total.`,ok:'Delete',danger:true})){A.deleteHomework(h.id);toast('Homework deleted')}},
-  qf:t=>{ui.f.quick=t.dataset.k;renderView()},
-  clearf:()=>{ui.f={quick:ui.f.quick,subject:'',priority:'',difficulty:'',date:''};ui.query='';$('#q').value='';renderView()},
+  qf:t=>{ui.f.quick=t.dataset.k;ui.f.timeline='';renderView()},
+  clearf:()=>{ui.f={quick:ui.f.quick,subject:'',priority:'',difficulty:'',date:'',timeline:''};ui.query='';$('#q').value='';renderView()},
   calprev:()=>{ui.cal.m--;if(ui.cal.m<0){ui.cal.m=11;ui.cal.y--}renderView()},
   calnext:()=>{ui.cal.m++;if(ui.cal.m>11){ui.cal.m=0;ui.cal.y++}renderView()},
   caltoday:()=>{const d=new Date();ui.cal={y:d.getFullYear(),m:d.getMonth(),sel:todayStr()};renderView()},
@@ -2580,7 +2581,7 @@ document.addEventListener('change',async e=>{
     if(path==='browserNotify'&&t.checked){let ok=false;try{ok=(await Notification.requestPermission())==='granted'}catch(err){}if(!ok){t.checked=false;toast('Browser notifications were blocked. You can allow them in your browser settings.',{kind:'bad',ms:5000});return}}
     A.setSetting(path,t.checked);return;
   }
-  if(t.dataset.filter){ui.f[t.dataset.filter]=t.value;renderView()}
+  if(t.dataset.filter){ui.f[t.dataset.filter]=t.value;if(t.dataset.filter==='timeline'&&t.value)ui.f.quick='all';renderView()}
 });
 document.addEventListener('input',e=>{
   if(e.target.id==='peopleq'){ui.peopleQuery=e.target.value;updateStudentDirectoryResults();return}
